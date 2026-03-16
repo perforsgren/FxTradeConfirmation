@@ -1,9 +1,17 @@
 ﻿<Application x:Class="FxTradeConfirmation.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:FxTradeConfirmation"
-             StartupUri="MainWindow.xaml">
+             xmlns:converters="clr-namespace:FxTradeConfirmation.Converters">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkBlueTheme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- Converters -->
+            <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+            <converters:EnumToBoolConverter x:Key="EnumToBool"/>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

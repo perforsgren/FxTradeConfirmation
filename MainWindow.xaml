@@ -3,10 +3,186 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:FxTradeConfirmation"
+        xmlns:views="clr-namespace:FxTradeConfirmation.Views"
+        xmlns:conv="clr-namespace:FxTradeConfirmation.Converters"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="FX Trade Confirmation" MinWidth="900" MinHeight="700"
+        WindowState="Normal" Background="{StaticResource BgDarkestBrush}">
 
+    <Window.Resources>
+        <conv:PremiumColorConverter x:Key="PremiumColor"/>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- Title bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Toolbar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Distributor row -->
+            <RowDefinition Height="Auto"/>
+            <!-- Legs area -->
+            <RowDefinition Height="*"/>
+            <!-- Total premium bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Status bar -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- === TITLE BAR === -->
+        <Border Grid.Row="0" Background="{StaticResource BgDarkBrush}"
+                Padding="16,10" BorderBrush="{StaticResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" FontSize="16" FontWeight="Bold"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           FontFamily="{StaticResource MainFont}">
+                    <Run Text="FX" Foreground="{StaticResource AccentBlueBrush}"/>
+                    <Run Text=" Trade Confirmation"/>
+                </TextBlock>
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
+                    <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToVis},
+                                   FallbackValue='Disconnected'}"
+                               Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- === TOOLBAR === -->
+        <Border Grid.Row="1" Background="{StaticResource BgDarkBrush}"
+                Padding="8,4" BorderBrush="{StaticResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="+ Add Leg" Style="{StaticResource ToolbarButton}"
+                        Command="{Binding AddLegCommand}" Margin="0,0,4,0"/>
+                <Button Content="Clear All" Style="{StaticResource ToolbarButton}"
+                        Command="{Binding ClearAllCommand}" Margin="0,0,4,0"/>
+
+                <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
+                        Margin="8,2"/>
+
+                <Button Content="Mail" Style="{StaticResource ToolbarButton}"
+                        Command="{Binding SendMailCommand}" Margin="4,0"/>
+                <Button Content="Save" Style="{StaticResource ToolbarButton}"
+                        Command="{Binding SaveCommand}" Margin="0,0,4,0"/>
+
+                <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
+                        Margin="8,2"/>
+
+                <Button Content="Admin" Style="{StaticResource ToolbarButton}"
+                        Command="{Binding ToggleAdminRowsCommand}"
+                        Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"
+                        Margin="4,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- === DISTRIBUTOR ROW === -->
+        <Border Grid.Row="2" Background="{StaticResource BgMediumBrush}"
+                Padding="16,8" BorderBrush="{StaticResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1">
+            <StackPanel>
+                <TextBlock Text="DISTRIBUTOR — Set values for all legs"
+                           Style="{StaticResource FieldLabel}" FontSize="10"
+                           Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6"/>
+                <WrapPanel>
+                    <!-- Distributor: Counterpart -->
+                    <StackPanel Margin="0,0,12,4" MinWidth="140">
+                        <TextBlock Text="Counterpart" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox Style="{StaticResource TradingComboBox}" Width="140"
+                                  ItemsSource="{Binding ReferenceData.Counterparts}"
+                                  x:Name="DistCounterpart"
+                                  SelectionChanged="DistCounterpart_Changed"/>
+                    </StackPanel>
+
+                    <!-- Distributor: Currency Pair -->
+                    <StackPanel Margin="0,0,12,4" MinWidth="120">
+                        <TextBlock Text="Currency Pair" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox Style="{StaticResource TradingComboBox}" Width="120"
+                                  ItemsSource="{Binding ReferenceData.CurrencyPairs}"
+                                  x:Name="DistCurrencyPair"
+                                  SelectionChanged="DistCurrencyPair_Changed"/>
+                    </StackPanel>
+
+                    <!-- Distributor: Strike -->
+                    <StackPanel Margin="0,0,12,4" MinWidth="100">
+                        <TextBlock Text="Strike" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Style="{StaticResource TradingTextBox}" Width="100"
+                                 x:Name="DistStrike"
+                                 KeyDown="DistStrike_KeyDown"/>
+                    </StackPanel>
+
+                    <!-- Distributor: Expiry -->
+                    <StackPanel Margin="0,0,12,4" MinWidth="100">
+                        <TextBlock Text="Expiry" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Style="{StaticResource TradingTextBox}" Width="100"
+                                 x:Name="DistExpiry"
+                                 KeyDown="DistExpiry_KeyDown"/>
+                    </StackPanel>
+
+                    <!-- Distributor: Cut -->
+                    <StackPanel Margin="0,0,12,4" MinWidth="80">
+                        <TextBlock Text="Cut" Style="{StaticResource FieldLabel}"/>
+                        <ComboBox Style="{StaticResource TradingComboBox}" Width="80"
+                                  ItemsSource="{Binding ReferenceData.Cuts}"
+                                  x:Name="DistCut"
+                                  SelectionChanged="DistCut_Changed"/>
+                    </StackPanel>
+
+                    <!-- Distributor: Notional -->
+                    <StackPanel Margin="0,0,12,4" MinWidth="120">
+                        <TextBlock Text="Notional" Style="{StaticResource FieldLabel}"/>
+                        <TextBox Style="{StaticResource TradingTextBox}" Width="120"
+                                 x:Name="DistNotional"
+                                 KeyDown="DistNotional_KeyDown"/>
+                    </StackPanel>
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- === LEGS AREA (Horizontal scroll of leg cards) === -->
+        <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto" Padding="8">
+            <ItemsControl ItemsSource="{Binding Legs}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <views:TradeLegControl DataContext="{Binding}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- === TOTAL PREMIUM BAR === -->
+        <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
+                Padding="16,8" BorderBrush="{StaticResource BorderDefaultBrush}"
+                BorderThickness="0,1,0,0"
+                Visibility="{Binding HasMultipleLegs, Converter={StaticResource BoolToVis}}">
+            <DockPanel>
+                <TextBlock Text="TOTAL PREMIUM" Style="{StaticResource FieldLabel}"
+                           DockPanel.Dock="Left" FontWeight="Bold" FontSize="12"
+                           VerticalAlignment="Center"/>
+                <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
+                           FontFamily="{StaticResource MonoFont}" FontSize="16"
+                           FontWeight="Bold" VerticalAlignment="Center"
+                           Foreground="{Binding TotalPremium, Converter={StaticResource PremiumColor}}"
+                           Text="{Binding TotalPremiumDisplay}"/>
+            </DockPanel>
+        </Border>
+
+        <!-- === STATUS BAR === -->
+        <Border Grid.Row="5" Background="{StaticResource BgDarkBrush}"
+                Padding="16,6" BorderBrush="{StaticResource BorderDefaultBrush}"
+                BorderThickness="0,1,0,0">
+            <TextBlock Text="{Binding StatusMessage}"
+                       Foreground="{StaticResource TextMutedBrush}" FontSize="11"/>
+        </Border>
     </Grid>
 </Window>
