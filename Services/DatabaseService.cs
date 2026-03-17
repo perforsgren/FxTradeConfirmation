@@ -72,6 +72,9 @@ public class DatabaseService : IDatabaseService
             await using var conn = new MySqlConnection(_connectionString);
             await conn.OpenAsync();
 
+            // TEMPORARY: print actual column names of userlist to debug
+            await DebugPrintColumnsAsync(conn, "userlist");
+
             data.Counterparts = await QueryListAsync(conn, "SELECT shortname FROM counterparts ORDER BY shortname");
             data.CurrencyPairs = await QueryListAsync(conn, "SELECT currencypair FROM currencypairs ORDER BY currencypair");
             data.EmailAddresses = await QueryListAsync(conn, "SELECT emailaddress FROM emailaddresses");
@@ -79,7 +82,6 @@ public class DatabaseService : IDatabaseService
             data.ReportingEntities = await QueryListAsync(conn, "SELECT DISTINCT ReportingEntity FROM userlist WHERE ReportingEntity IS NOT NULL");
             data.InvestmentDecisionIDs = await QueryListAsync(conn, "SELECT DISTINCT InvDecID FROM userlist WHERE InvDecID IS NOT NULL");
 
-            // Currency pair → portfolio mapping
             await using var cmd = new MySqlCommand("SELECT currencypair, portfolio FROM currencytoportfolio", conn);
             await using var reader = await cmd.ExecuteReaderAsync();
             while (await reader.ReadAsync())
@@ -89,7 +91,7 @@ public class DatabaseService : IDatabaseService
         }
         catch (MySqlException ex)
         {
-            _connectionVerified = false;
+            // NOTE: do NOT reset _connectionVerified here — a bad query is not a lost connection
             Debug.WriteLine($"[DatabaseService] LoadReferenceData FAILED: {ex.Number} — {ex.Message}");
         }
 
@@ -322,7 +324,7 @@ public class DatabaseService : IDatabaseService
 
         if (!_connectionVerified)
         {
-            Debug.WriteLine("[DatabaseService] Skipped — connection not verified (TestConnectionAsync not called or failed).");
+            Debug.WriteLine("[DatabaseService] Skipped — connection not verified.");
             return false;
         }
 
@@ -343,5 +345,22 @@ public class DatabaseService : IDatabaseService
         while (await reader.ReadAsync())
             list.Add(reader.GetString(0));
         return list;
+    }
+
+    /// <summary>
+    /// Temporary helper — prints actual column names of a table to the Debug output.
+    /// Remove once column names are confirmed.
+    /// </summary>
+    private static async Task DebugPrintColumnsAsync(MySqlConnection conn, string tableName)
+    {
+        await using var cmd = new MySqlCommand(
+            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @table ORDER BY ORDINAL_POSITION",
+            conn);
+        cmd.Parameters.AddWithValue("@table", tableName);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var columns = new List<string>();
+        while (await reader.ReadAsync())
+            columns.Add(reader.GetString(0));
+        Debug.WriteLine($"[DatabaseService] Columns in '{tableName}': {string.Join(", ", columns)}");
     }
 }

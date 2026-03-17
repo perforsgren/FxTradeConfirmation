@@ -12,273 +12,310 @@
             Margin="4" Padding="12">
         <Grid>
             <Grid.RowDefinitions>
-                <!-- Header -->
                 <RowDefinition Height="Auto"/>
-                <!-- Option fields -->
-                <RowDefinition Height="*"/>
-                <!-- Hedge separator -->
                 <RowDefinition Height="Auto"/>
-                <!-- Hedge fields -->
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- === LEG HEADER === -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <DockPanel Grid.Row="0" Margin="0,0,0,8">
                 <TextBlock Text="{Binding LegNumber, StringFormat='Leg {0}'}"
                            Style="{StaticResource LegHeader}" DockPanel.Dock="Left"/>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"
                             HorizontalAlignment="Right">
-                    <Button Content="+" ToolTip="Copy Leg" Style="{StaticResource ToolbarButton}"
+                    <Button Content="+" ToolTip="Copy Leg" Style="{StaticResource IconButton}"
                             Command="{Binding DataContext.CopyLegCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                            CommandParameter="{Binding}" Padding="6,2" FontSize="14" FontWeight="Bold"/>
-                    <Button Content="x" ToolTip="Delete Leg" Style="{StaticResource ToolbarButton}"
+                            CommandParameter="{Binding}"
+                            Foreground="{StaticResource PositiveGreenBrush}"/>
+                    <Button Content="✕" ToolTip="Delete Leg" Style="{StaticResource IconButton}"
                             Command="{Binding DataContext.DeleteLegCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                            CommandParameter="{Binding}" Padding="6,2" FontSize="12"
-                            Foreground="{StaticResource NegativeRedBrush}"/>
+                            CommandParameter="{Binding}"
+                            Foreground="{StaticResource NegativeRedBrush}" Margin="4,0,0,0"/>
                 </StackPanel>
             </DockPanel>
 
-            <!-- === OPTION FIELDS === -->
-            <StackPanel Grid.Row="1" x:Name="OptionFields">
+            <!-- ═══════════════════════════════════════════════ -->
+            <!-- SECTION 1: TRADE DETAILS                        -->
+            <!-- ═══════════════════════════════════════════════ -->
+            <Border Grid.Row="1" BorderBrush="{StaticResource BorderSectionBrush}"
+                    BorderThickness="0,0,0,1" Margin="0,0,0,6" Padding="0,0,0,8">
+                <StackPanel>
+                    <!-- Section header -->
+                    <Border BorderBrush="{StaticResource AccentBlueBrush}"
+                            BorderThickness="0,2,0,0" Opacity="0.7" Margin="0,0,0,6"/>
+                    <TextBlock Text="📋  TRADE DETAILS" Style="{StaticResource SectionHeader}"
+                               Margin="0,0,0,8"/>
 
-                <!-- Counterpart -->
-                <TextBlock Text="COUNTERPART" Style="{StaticResource FieldLabel}"/>
-                <ComboBox Style="{StaticResource TradingComboBox}"
-                          Text="{Binding Counterpart, UpdateSourceTrigger=PropertyChanged}"
-                          ItemsSource="{Binding DataContext.ReferenceData.Counterparts,
-                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                          Margin="0,0,0,6"/>
-
-                <!-- Currency Pair -->
-                <TextBlock Text="CURRENCY PAIR" Style="{StaticResource FieldLabel}"/>
-                <ComboBox Style="{StaticResource TradingComboBox}"
-                          Text="{Binding CurrencyPair, UpdateSourceTrigger=PropertyChanged}"
-                          ItemsSource="{Binding DataContext.ReferenceData.CurrencyPairs,
-                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                          Margin="0,0,0,6"/>
-
-                <!-- Buy/Sell -->
-                <TextBlock Text="CLIENT BUY/SELL" Style="{StaticResource FieldLabel}"/>
-                <Grid Margin="0,0,0,6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <RadioButton Grid.Column="0" GroupName="{Binding LegNumber, StringFormat='bs_{0}'}"
-                                 IsChecked="{Binding BuySell, Converter={StaticResource EnumToBool}, ConverterParameter=Buy}"
-                                 Style="{StaticResource {x:Type ToggleButton}}"
-                                 Content="BUY" FontWeight="SemiBold" FontSize="12"
-                                 Foreground="{StaticResource PositiveGreenBrush}"
-                                 Padding="0,6"/>
-                    <RadioButton Grid.Column="1" GroupName="{Binding LegNumber, StringFormat='bs_{0}'}"
-                                 IsChecked="{Binding BuySell, Converter={StaticResource EnumToBool}, ConverterParameter=Sell}"
-                                 Style="{StaticResource {x:Type ToggleButton}}"
-                                 Content="SELL" FontWeight="SemiBold" FontSize="12"
-                                 Foreground="{StaticResource NegativeRedBrush}"
-                                 Padding="0,6"/>
-                </Grid>
-
-                <!-- Call/Put -->
-                <TextBlock Text="CALL/PUT" Style="{StaticResource FieldLabel}"/>
-                <Grid Margin="0,0,0,6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <RadioButton Grid.Column="0" GroupName="{Binding LegNumber, StringFormat='cp_{0}'}"
-                                 IsChecked="{Binding CallPut, Converter={StaticResource EnumToBool}, ConverterParameter=Call}"
-                                 Style="{StaticResource {x:Type ToggleButton}}"
-                                 Content="CALL" FontWeight="SemiBold" FontSize="12"
-                                 Padding="0,6"/>
-                    <RadioButton Grid.Column="1" GroupName="{Binding LegNumber, StringFormat='cp_{0}'}"
-                                 IsChecked="{Binding CallPut, Converter={StaticResource EnumToBool}, ConverterParameter=Put}"
-                                 Style="{StaticResource {x:Type ToggleButton}}"
-                                 Content="PUT" FontWeight="SemiBold" FontSize="12"
-                                 Padding="0,6"/>
-                </Grid>
-
-                <!-- Strike -->
-                <TextBlock Text="STRIKE" Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource TradingTextBox}"
-                         Text="{Binding StrikeText, UpdateSourceTrigger=PropertyChanged}"
-                         Margin="0,0,0,6"/>
-
-                <!-- Expiry Date -->
-                <TextBlock Text="EXPIRY DATE" Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource TradingTextBox}"
-                         Text="{Binding ExpiryDate, StringFormat='yyyy-MM-dd', UpdateSourceTrigger=LostFocus}"
-                         Margin="0,0,0,6"/>
-
-                <!-- Settlement Date (Read-only) -->
-                <TextBlock Text="SETTLEMENT DATE" Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource TradingTextBox}" IsReadOnly="True"
-                         Text="{Binding SettlementDate, StringFormat='yyyy-MM-dd', Mode=OneWay}"
-                         Margin="0,0,0,6"/>
-
-                <!-- Cut -->
-                <TextBlock Text="CUT" Style="{StaticResource FieldLabel}"/>
-                <ComboBox Style="{StaticResource TradingComboBox}"
-                          Text="{Binding Cut, UpdateSourceTrigger=PropertyChanged}"
-                          ItemsSource="{Binding DataContext.ReferenceData.Cuts,
-                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                          Margin="0,0,0,6"/>
-
-                <!-- Notional -->
-                <TextBlock Text="NOTIONAL" Style="{StaticResource FieldLabel}"/>
-                <Grid Margin="0,0,0,6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0" Style="{StaticResource TradingTextBox}"
-                             Text="{Binding NotionalText, UpdateSourceTrigger=PropertyChanged}"/>
-                    <Button Grid.Column="1" Content="{Binding NotionalCurrency}"
-                            Style="{StaticResource ToolbarButton}"
-                            Command="{Binding ToggleNotionalCurrencyCommand}"
-                            FontFamily="{StaticResource MonoFont}" FontSize="11"
-                            Padding="6,6" Margin="4,0,0,0"
-                            Foreground="{StaticResource AccentBlueBrush}"/>
-                </Grid>
-
-                <!-- Premium -->
-                <DockPanel Margin="0,0,0,2">
-                    <TextBlock Text="PREMIUM" Style="{StaticResource FieldLabel}" DockPanel.Dock="Left"/>
-                    <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
-                               FontSize="10" VerticalAlignment="Center"
-                               Foreground="{StaticResource TextMutedBrush}">
-                        <Run Text="["/><Run Text="{Binding PremiumStyle, Mode=OneWay}"/><Run Text="]"/>
-                    </TextBlock>
-                </DockPanel>
-                <TextBox Text="{Binding PremiumText, UpdateSourceTrigger=PropertyChanged}"
-                         IsReadOnly="{Binding IsPremiumLocked}"
-                         Margin="0,0,0,6">
-                    <TextBox.Style>
-                        <Style TargetType="TextBox" BasedOn="{StaticResource TradingTextBox}">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsSolvingTarget}" Value="True">
-                                    <Setter Property="BorderBrush"
-                                            Value="{StaticResource SolvingGreenBrush}"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBox.Style>
-                </TextBox>
-
-                <!-- Premium Amount -->
-                <TextBlock Text="PREMIUM AMOUNT" Style="{StaticResource FieldLabel}"/>
-                <Grid Margin="0,0,0,6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0" Style="{StaticResource TradingTextBox}"
-                             Text="{Binding PremiumAmountText, UpdateSourceTrigger=PropertyChanged}"
-                             IsReadOnly="{Binding IsPremiumLocked}"/>
-                    <Button Grid.Column="1" Content="{Binding PremiumCurrency}"
-                            Style="{StaticResource ToolbarButton}"
-                            Command="{Binding TogglePremiumCurrencyCommand}"
-                            FontFamily="{StaticResource MonoFont}" FontSize="11"
-                            Padding="6,6" Margin="4,0,0,0"
-                            Foreground="{StaticResource AccentBlueBrush}"/>
-                </Grid>
-
-                <!-- Premium Date -->
-                <DockPanel Margin="0,0,0,2">
-                    <TextBlock Text="PREMIUM DATE" Style="{StaticResource FieldLabel}" DockPanel.Dock="Left"/>
-                    <Button DockPanel.Dock="Right" HorizontalAlignment="Right"
-                            Content="{Binding PremiumDateType}" Style="{StaticResource ToolbarButton}"
-                            Command="{Binding TogglePremiumDateTypeCommand}"
-                            FontSize="10" Padding="4,2"/>
-                </DockPanel>
-                <TextBox Style="{StaticResource TradingTextBox}" IsReadOnly="True"
-                         Text="{Binding PremiumDate, StringFormat='yyyy-MM-dd', Mode=OneWay}"
-                         Margin="0,0,0,6"/>
-
-                <!-- === ADMIN FIELDS (togglable) === -->
-                <StackPanel Visibility="{Binding DataContext.ShowAdminRows,
-                    RelativeSource={RelativeSource AncestorType=ItemsControl},
-                    Converter={StaticResource BoolToVis}}">
-
-                    <TextBlock Text="PORTFOLIO MX3" Style="{StaticResource FieldLabel}"/>
+                    <!-- Counterpart -->
+                    <TextBlock Text="COUNTERPART" Style="{StaticResource FieldLabel}"/>
                     <ComboBox Style="{StaticResource TradingComboBox}"
-                              Text="{Binding PortfolioMX3, UpdateSourceTrigger=PropertyChanged}"
-                              ItemsSource="{Binding DataContext.ReferenceData.Portfolios,
+                              Text="{Binding Counterpart, UpdateSourceTrigger=PropertyChanged}"
+                              ItemsSource="{Binding DataContext.ReferenceData.Counterparts,
                                   RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                               Margin="0,0,0,6"/>
 
-                    <TextBlock Text="TRADER" Style="{StaticResource FieldLabel}"/>
+                    <!-- Currency Pair -->
+                    <TextBlock Text="CURRENCY PAIR" Style="{StaticResource FieldLabel}"/>
                     <ComboBox Style="{StaticResource TradingComboBox}"
-                              Text="{Binding Trader, UpdateSourceTrigger=PropertyChanged}"
-                              ItemsSource="{Binding DataContext.ReferenceData.Traders,
+                              Text="{Binding CurrencyPair, UpdateSourceTrigger=PropertyChanged}"
+                              ItemsSource="{Binding DataContext.ReferenceData.CurrencyPairs,
                                   RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                               Margin="0,0,0,6"/>
 
-                    <TextBlock Text="EXECUTION TIME" Style="{StaticResource FieldLabel}"/>
+                    <!-- Buy/Sell — Segmented toggle -->
+                    <TextBlock Text="CLIENT BUY/SELL" Style="{StaticResource FieldLabel}"/>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <RadioButton Grid.Column="0"
+                                     GroupName="{Binding LegNumber, StringFormat='bs_{0}'}"
+                                     IsChecked="{Binding BuySell, Converter={StaticResource EnumToBool}, ConverterParameter=Buy}"
+                                     Style="{StaticResource SegmentedToggleBuy}"
+                                     Content="BUY"/>
+                        <RadioButton Grid.Column="1"
+                                     GroupName="{Binding LegNumber, StringFormat='bs_{0}'}"
+                                     IsChecked="{Binding BuySell, Converter={StaticResource EnumToBool}, ConverterParameter=Sell}"
+                                     Style="{StaticResource SegmentedToggleSell}"
+                                     Content="SELL"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ═══════════════════════════════════════════════ -->
+            <!-- SECTION 2: OPTION DETAILS                       -->
+            <!-- ═══════════════════════════════════════════════ -->
+            <Border Grid.Row="2" BorderBrush="{StaticResource BorderSectionBrush}"
+                    BorderThickness="0,0,0,1" Margin="0,0,0,6" Padding="0,0,0,8">
+                <StackPanel>
+                    <!-- Section header -->
+                    <Border BorderBrush="{StaticResource AccentBlueBrush}"
+                            BorderThickness="0,2,0,0" Opacity="0.7" Margin="0,0,0,6"/>
+                    <TextBlock Text="📊  OPTION DETAILS" Style="{StaticResource SectionHeader}"
+                               Margin="0,0,0,8"/>
+
+                    <!-- Call/Put — Segmented toggle -->
+                    <TextBlock Text="CALL/PUT" Style="{StaticResource FieldLabel}"/>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <RadioButton Grid.Column="0"
+                                     GroupName="{Binding LegNumber, StringFormat='cp_{0}'}"
+                                     IsChecked="{Binding CallPut, Converter={StaticResource EnumToBool}, ConverterParameter=Call}"
+                                     Style="{StaticResource SegmentedToggleLeft}"
+                                     Content="CALL"/>
+                        <RadioButton Grid.Column="1"
+                                     GroupName="{Binding LegNumber, StringFormat='cp_{0}'}"
+                                     IsChecked="{Binding CallPut, Converter={StaticResource EnumToBool}, ConverterParameter=Put}"
+                                     Style="{StaticResource SegmentedToggleRight}"
+                                     Content="PUT"/>
+                    </Grid>
+
+                    <!-- Strike -->
+                    <TextBlock Text="STRIKE" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Style="{StaticResource TradingTextBox}"
+                             Text="{Binding StrikeText, UpdateSourceTrigger=PropertyChanged}"
+                             Margin="0,0,0,6"/>
+
+                    <!-- Expiry Date -->
+                    <TextBlock Text="EXPIRY DATE" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Style="{StaticResource TradingTextBox}"
+                             Text="{Binding ExpiryDate, StringFormat='yyyy-MM-dd', UpdateSourceTrigger=LostFocus}"
+                             Margin="0,0,0,6"/>
+
+                    <!-- Settlement Date (Read-only) -->
+                    <TextBlock Text="SETTLEMENT DATE" Style="{StaticResource FieldLabel}"/>
                     <TextBox Style="{StaticResource TradingTextBox}" IsReadOnly="True"
-                             Text="{Binding ExecutionTime, Mode=OneWay}" Margin="0,0,0,6"/>
-
-                    <TextBlock Text="MIC" Style="{StaticResource FieldLabel}"/>
-                    <ComboBox Style="{StaticResource TradingComboBox}"
-                              Text="{Binding Mic, UpdateSourceTrigger=PropertyChanged}"
-                              ItemsSource="{Binding DataContext.ReferenceData.MICs,
-                                  RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                              Margin="0,0,0,6"/>
-
-                    <TextBlock Text="TVTIC" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource TradingTextBox}"
-                             Text="{Binding Tvtic, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-
-                    <TextBlock Text="ISIN" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource TradingTextBox}"
-                             Text="{Binding Isin, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-
-                    <TextBlock Text="SALES" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource TradingTextBox}"
-                             Text="{Binding Sales, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
-
-                    <TextBlock Text="INV DECISION ID" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource TradingTextBox}"
-                             Text="{Binding InvestmentDecisionID, UpdateSourceTrigger=PropertyChanged}"
+                             Text="{Binding SettlementDate, StringFormat='yyyy-MM-dd', Mode=OneWay}"
                              Margin="0,0,0,6"/>
 
-                    <TextBlock Text="BROKER" Style="{StaticResource FieldLabel}"/>
+                    <!-- Cut -->
+                    <TextBlock Text="CUT" Style="{StaticResource FieldLabel}"/>
                     <ComboBox Style="{StaticResource TradingComboBox}"
-                              Text="{Binding Broker, UpdateSourceTrigger=PropertyChanged}"
-                              ItemsSource="{Binding DataContext.ReferenceData.Brokers,
+                              Text="{Binding Cut, UpdateSourceTrigger=PropertyChanged}"
+                              ItemsSource="{Binding DataContext.ReferenceData.Cuts,
                                   RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                               Margin="0,0,0,6"/>
+                </StackPanel>
+            </Border>
 
-                    <TextBlock Text="MARGIN" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource TradingTextBox}"
-                             Text="{Binding MarginText, UpdateSourceTrigger=PropertyChanged}"
-                             Margin="0,0,0,6"/>
+            <!-- ═══════════════════════════════════════════════ -->
+            <!-- SECTION 3: AMOUNTS & PREMIUM                   -->
+            <!-- ═══════════════════════════════════════════════ -->
+            <Border Grid.Row="3" BorderBrush="{StaticResource BorderSectionBrush}"
+                    BorderThickness="0,0,0,1" Margin="0,0,0,6" Padding="0,0,0,8">
+                <StackPanel>
+                    <!-- Section header -->
+                    <Border BorderBrush="{StaticResource AccentBlueBrush}"
+                            BorderThickness="0,2,0,0" Opacity="0.7" Margin="0,0,0,6"/>
+                    <TextBlock Text="💰  AMOUNTS &amp; PREMIUM" Style="{StaticResource SectionHeader}"
+                               Margin="0,0,0,8"/>
 
-                    <TextBlock Text="REPORTING ENTITY" Style="{StaticResource FieldLabel}"/>
-                    <TextBox Style="{StaticResource TradingTextBox}"
-                             Text="{Binding ReportingEntity, UpdateSourceTrigger=PropertyChanged}"
+                    <!-- Notional — currency toggle as inline suffix inside the textbox -->
+                    <TextBlock Text="NOTIONAL" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Style="{StaticResource TradingTextBoxWithSuffix}"
+                             Text="{Binding NotionalText, UpdateSourceTrigger=PropertyChanged}"
+                             Margin="0,0,0,6">
+                        <TextBox.Tag>
+                            <Button Content="{Binding NotionalCurrency}"
+                                    Style="{StaticResource InlineSuffixToggle}"
+                                    Command="{Binding ToggleNotionalCurrencyCommand}"/>
+                        </TextBox.Tag>
+                    </TextBox>
+
+                    <!-- Premium -->
+                    <DockPanel Margin="0,0,0,2">
+                        <TextBlock Text="PREMIUM" Style="{StaticResource FieldLabel}" DockPanel.Dock="Left"/>
+                        <Border DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                Style="{StaticResource PremiumBadge}">
+                            <TextBlock FontSize="9" FontFamily="{StaticResource MonoFont}"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Text="{Binding PremiumStyle, Mode=OneWay}"/>
+                        </Border>
+                    </DockPanel>
+                    <TextBox Text="{Binding PremiumText, UpdateSourceTrigger=PropertyChanged}"
+                             IsReadOnly="{Binding IsPremiumLocked}"
+                             Margin="0,0,0,6">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox" BasedOn="{StaticResource TradingTextBox}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsSolvingTarget}" Value="True">
+                                        <Setter Property="BorderBrush"
+                                                Value="{StaticResource SolvingGreenBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
+
+                    <!-- Premium Amount — currency toggle as inline suffix -->
+                    <TextBlock Text="PREMIUM AMOUNT" Style="{StaticResource FieldLabel}"/>
+                    <TextBox Style="{StaticResource TradingTextBoxWithSuffix}"
+                             Text="{Binding PremiumAmountText, UpdateSourceTrigger=PropertyChanged}"
+                             IsReadOnly="{Binding IsPremiumLocked}"
+                             Margin="0,0,0,6">
+                        <TextBox.Tag>
+                            <Button Content="{Binding PremiumCurrency}"
+                                    Style="{StaticResource InlineSuffixToggle}"
+                                    Command="{Binding TogglePremiumCurrencyCommand}"/>
+                        </TextBox.Tag>
+                    </TextBox>
+
+                    <!-- Premium Date — type badge as inline suffix -->
+                    <DockPanel Margin="0,0,0,2">
+                        <TextBlock Text="PREMIUM DATE" Style="{StaticResource FieldLabel}" DockPanel.Dock="Left"/>
+                        <Border DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                Style="{StaticResource PremiumBadge}">
+                            <TextBlock FontSize="9" FontFamily="{StaticResource MonoFont}"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Text="{Binding PremiumDateType, Mode=OneWay}"/>
+                        </Border>
+                    </DockPanel>
+                    <TextBox Style="{StaticResource TradingTextBox}" IsReadOnly="True"
+                             Text="{Binding PremiumDate, StringFormat='yyyy-MM-dd', Mode=OneWay}"
                              Margin="0,0,0,6"/>
                 </StackPanel>
+            </Border>
+
+            <!-- === ADMIN FIELDS === -->
+            <StackPanel Grid.Row="4"
+                        Visibility="{Binding DataContext.ShowAdminRows,
+                            RelativeSource={RelativeSource AncestorType=ItemsControl},
+                            Converter={StaticResource BoolToVis}}">
+
+                <Border BorderBrush="{StaticResource AccentBlueBrush}"
+                        BorderThickness="0,2,0,0" Opacity="0.7" Margin="0,0,0,6"/>
+                <TextBlock Text="⚙  ADMIN" Style="{StaticResource SectionHeader}"
+                           Margin="0,0,0,8"/>
+
+                <TextBlock Text="PORTFOLIO MX3" Style="{StaticResource FieldLabel}"/>
+                <ComboBox Style="{StaticResource TradingComboBox}"
+                          Text="{Binding PortfolioMX3, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.ReferenceData.Portfolios,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          Margin="0,0,0,6"/>
+
+                <TextBlock Text="TRADER" Style="{StaticResource FieldLabel}"/>
+                <ComboBox Style="{StaticResource TradingComboBox}"
+                          Text="{Binding Trader, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.ReferenceData.Traders,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          Margin="0,0,0,6"/>
+
+                <TextBlock Text="EXECUTION TIME" Style="{StaticResource FieldLabel}"/>
+                <TextBox Style="{StaticResource TradingTextBox}" IsReadOnly="True"
+                         Text="{Binding ExecutionTime, Mode=OneWay}" Margin="0,0,0,6"/>
+
+                <TextBlock Text="MIC" Style="{StaticResource FieldLabel}"/>
+                <ComboBox Style="{StaticResource TradingComboBox}"
+                          Text="{Binding Mic, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.ReferenceData.MICs,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          Margin="0,0,0,6"/>
+
+                <TextBlock Text="TVTIC" Style="{StaticResource FieldLabel}"/>
+                <TextBox Style="{StaticResource TradingTextBox}"
+                         Text="{Binding Tvtic, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+
+                <TextBlock Text="ISIN" Style="{StaticResource FieldLabel}"/>
+                <TextBox Style="{StaticResource TradingTextBox}"
+                         Text="{Binding Isin, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+
+                <TextBlock Text="SALES" Style="{StaticResource FieldLabel}"/>
+                <TextBox Style="{StaticResource TradingTextBox}"
+                         Text="{Binding Sales, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+
+                <TextBlock Text="INV DECISION ID" Style="{StaticResource FieldLabel}"/>
+                <TextBox Style="{StaticResource TradingTextBox}"
+                         Text="{Binding InvestmentDecisionID, UpdateSourceTrigger=PropertyChanged}"
+                         Margin="0,0,0,6"/>
+
+                <TextBlock Text="BROKER" Style="{StaticResource FieldLabel}"/>
+                <ComboBox Style="{StaticResource TradingComboBox}"
+                          Text="{Binding Broker, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.ReferenceData.Brokers,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          Margin="0,0,0,6"/>
+
+                <TextBlock Text="MARGIN" Style="{StaticResource FieldLabel}"/>
+                <TextBox Style="{StaticResource TradingTextBox}"
+                         Text="{Binding MarginText, UpdateSourceTrigger=PropertyChanged}"
+                         Margin="0,0,0,6"/>
+
+                <TextBlock Text="REPORTING ENTITY" Style="{StaticResource FieldLabel}"/>
+                <TextBox Style="{StaticResource TradingTextBox}"
+                         Text="{Binding ReportingEntity, UpdateSourceTrigger=PropertyChanged}"
+                         Margin="0,0,0,6"/>
             </StackPanel>
 
-            <!-- === HEDGE SEPARATOR === -->
-            <Border Grid.Row="2" Style="{StaticResource HedgeSeparator}"
-                    Visibility="{Binding HasHedge, Converter={StaticResource BoolToVis}}"/>
+            <!-- === HEDGE SECTION HEADER (always visible) === -->
+            <Border Grid.Row="5" Margin="0,4,0,0"
+                    BorderBrush="{StaticResource AccentBlueBrush}"
+                    BorderThickness="0,2,0,0"
+                    Opacity="0.7"/>
 
-            <!-- === HEDGE FIELDS === -->
-            <StackPanel Grid.Row="3"
-                        Visibility="{Binding HasHedge, Converter={StaticResource BoolToVis}}">
-
-                <TextBlock Text="HEDGE" Style="{StaticResource FieldLabel}" FontWeight="Bold"
-                           Foreground="{StaticResource AccentBlueBrush}" Margin="0,4,0,4"/>
-
-                <!-- Hedge Type -->
-                <TextBlock Text="HEDGE TYPE" Style="{StaticResource FieldLabel}"/>
+            <!-- Hedge type selector (always visible) -->
+            <StackPanel Grid.Row="5" Margin="0,10,0,0">
+                <TextBlock Text="⛊  HEDGE" Style="{StaticResource SectionHeader}"
+                           Margin="0,0,0,4"/>
                 <ComboBox Style="{StaticResource TradingComboBox}" IsEditable="False"
                           SelectedItem="{Binding Hedge}" Margin="0,0,0,6">
                     <ComboBoxItem Content="No"/>
                     <ComboBoxItem Content="Spot"/>
                     <ComboBoxItem Content="Forward"/>
                 </ComboBox>
+            </StackPanel>
+
+            <!-- === HEDGE DETAIL FIELDS (collapse when Hedge=No) === -->
+            <StackPanel Grid.Row="6"
+                        Visibility="{Binding HasHedge, Converter={StaticResource BoolToVis}}">
 
                 <!-- Hedge Buy/Sell (auto) -->
                 <TextBlock Text="CLIENT BUY/SELL" Style="{StaticResource FieldLabel}"/>
@@ -290,6 +327,12 @@
                 <TextBox Style="{StaticResource TradingTextBox}"
                          Text="{Binding HedgeNotionalText, UpdateSourceTrigger=PropertyChanged}"
                          Margin="0,0,0,6"/>
+
+                <!-- Hedge Notional Currency -->
+                <TextBlock Text="NOTIONAL CURRENCY" Style="{StaticResource FieldLabel}"/>
+                <TextBlock FontFamily="{StaticResource MonoFont}" FontSize="12"
+                           Foreground="{StaticResource AccentBlueBrush}"
+                           Text="{Binding HedgeNotionalCurrency}" Margin="0,0,0,6"/>
 
                 <!-- Hedge Rate -->
                 <TextBlock Text="HEDGE RATE" Style="{StaticResource FieldLabel}"/>

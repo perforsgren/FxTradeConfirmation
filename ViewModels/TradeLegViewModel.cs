@@ -22,7 +22,7 @@ public partial class TradeLegViewModel : ObservableObject
 
     // Option fields
     [ObservableProperty] private string _counterpart = string.Empty;
-    [ObservableProperty] private string _currencyPair = string.Empty;
+    [ObservableProperty] private string _currencyPair = "EURSEK";
     [ObservableProperty] private BuySell _buySell = BuySell.Buy;
     [ObservableProperty] private CallPut _callPut = CallPut.Call;
     [ObservableProperty] private string _strikeText = string.Empty;
@@ -30,15 +30,15 @@ public partial class TradeLegViewModel : ObservableObject
     [ObservableProperty] private DateTime? _settlementDate;
     [ObservableProperty] private string _cut = "NYC";
     [ObservableProperty] private string _notionalText = string.Empty;
-    [ObservableProperty] private string _notionalCurrency = string.Empty;
+    [ObservableProperty] private string _notionalCurrency = "EUR";
     [ObservableProperty] private string _premiumText = string.Empty;
     [ObservableProperty] private string _premiumAmountText = string.Empty;
-    [ObservableProperty] private string _premiumCurrency = string.Empty;
+    [ObservableProperty] private string _premiumCurrency = "SEK";
     [ObservableProperty] private DateTime? _premiumDate;
     [ObservableProperty] private PremiumStyle _premiumStyle = PremiumStyle.Pips;
     [ObservableProperty] private PremiumDateType _premiumDateType = PremiumDateType.Spot;
     [ObservableProperty] private string _portfolioMX3 = string.Empty;
-    [ObservableProperty] private string _trader = "P901PEF";
+    [ObservableProperty] private string _trader = Environment.UserName.ToUpper();
     [ObservableProperty] private string _executionTime = string.Empty;
     [ObservableProperty] private string _mic = "XOFF";
     [ObservableProperty] private string _tvtic = string.Empty;
@@ -53,7 +53,7 @@ public partial class TradeLegViewModel : ObservableObject
     [ObservableProperty] private HedgeType _hedge = HedgeType.No;
     [ObservableProperty] private BuySell _hedgeBuySell = BuySell.Buy;
     [ObservableProperty] private string _hedgeNotionalText = string.Empty;
-    [ObservableProperty] private string _hedgeNotionalCurrency = string.Empty;
+    [ObservableProperty] private string _hedgeNotionalCurrency = "EUR";
     [ObservableProperty] private string _hedgeRateText = string.Empty;
     [ObservableProperty] private DateTime? _hedgeSettlementDate;
     [ObservableProperty] private string _hedgeTVTIC = string.Empty;
@@ -69,6 +69,9 @@ public partial class TradeLegViewModel : ObservableObject
     [ObservableProperty] private bool _hasValidationError;
 
     public bool HasHedge => Hedge != HedgeType.No;
+
+    /// <summary>True if this is the first leg — only Leg 1 can edit Counterpart/CurrencyPair.</summary>
+    public bool IsFirstLeg => LegNumber == 1;
 
     public string BaseCurrency => CurrencyPair.Length >= 3 ? CurrencyPair[..3] : "";
     public string QuoteCurrency => CurrencyPair.Length >= 6 ? CurrencyPair[3..6] : "";
@@ -88,6 +91,13 @@ public partial class TradeLegViewModel : ObservableObject
 
     // --- Reactions to property changes ---
 
+    partial void OnCounterpartChanged(string value)
+    {
+        // If this is Leg 1, propagate to all other legs
+        if (IsFirstLeg)
+            _parent.PropagateFromLeg1(nameof(Counterpart), value);
+    }
+
     partial void OnCurrencyPairChanged(string value)
     {
         if (value.Length >= 6)
@@ -101,7 +111,17 @@ public partial class TradeLegViewModel : ObservableObject
             // Auto-set portfolio from DB
             _ = LoadPortfolioAsync(value);
         }
+
+        // If this is Leg 1, propagate to all other legs
+        if (IsFirstLeg)
+            _parent.PropagateFromLeg1(nameof(CurrencyPair), value);
+
         _parent.NotifyLegChanged();
+    }
+
+    partial void OnLegNumberChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsFirstLeg));
     }
 
     partial void OnBuySellChanged(BuySell value)

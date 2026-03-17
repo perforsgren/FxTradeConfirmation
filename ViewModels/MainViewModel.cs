@@ -43,6 +43,12 @@ public partial class MainViewModel : ObservableObject
     private TradeLegViewModel? _solvingLeg;
     private bool _solvingByAmount;
 
+    /// <summary>
+    /// Raised when a distributor combo should clear its selection after distributing.
+    /// The string parameter is the field name ("Counterpart" or "CurrencyPair").
+    /// </summary>
+    public event Action<string>? DistributorClearRequested;
+
     // --- Initialization ---
 
     private async Task InitializeAsync()
@@ -181,12 +187,14 @@ public partial class MainViewModel : ObservableObject
     private void SetAllCounterpart(string value)
     {
         foreach (var leg in Legs) leg.Counterpart = value;
+        DistributorClearRequested?.Invoke(nameof(TradeLegViewModel.Counterpart));
     }
 
     [RelayCommand]
     private void SetAllCurrencyPair(string value)
     {
         foreach (var leg in Legs) leg.CurrencyPair = value;
+        DistributorClearRequested?.Invoke(nameof(TradeLegViewModel.CurrencyPair));
     }
 
     [RelayCommand]
@@ -233,6 +241,30 @@ public partial class MainViewModel : ObservableObject
     private void SetAllHedgeRate(string value)
     {
         foreach (var leg in Legs) leg.HedgeRateText = value;
+    }
+
+    // --- Propagation from Leg 1 ---
+
+    /// <summary>
+    /// Called by Leg 1 when Counterpart or CurrencyPair changes,
+    /// to keep all other legs in sync.
+    /// </summary>
+    public void PropagateFromLeg1(string propertyName, string value)
+    {
+        foreach (var leg in Legs)
+        {
+            if (leg.IsFirstLeg) continue;
+
+            switch (propertyName)
+            {
+                case nameof(TradeLegViewModel.Counterpart):
+                    leg.Counterpart = value;
+                    break;
+                case nameof(TradeLegViewModel.CurrencyPair):
+                    leg.CurrencyPair = value;
+                    break;
+            }
+        }
     }
 
     // --- Solving ---
@@ -308,6 +340,15 @@ public partial class MainViewModel : ObservableObject
     private void AddLegInternal()
     {
         var leg = new TradeLegViewModel(this, Legs.Count + 1);
+
+        // New legs inherit Counterpart/CurrencyPair from Leg 1
+        if (Legs.Count > 0)
+        {
+            var leg1 = Legs[0];
+            leg.Counterpart = leg1.Counterpart;
+            leg.CurrencyPair = leg1.CurrencyPair;
+        }
+
         Legs.Add(leg);
     }
 
