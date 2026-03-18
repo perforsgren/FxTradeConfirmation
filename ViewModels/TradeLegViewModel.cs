@@ -65,6 +65,12 @@ public partial class TradeLegViewModel : ObservableObject
     [ObservableProperty] private bool _isSolvingTarget;
     [ObservableProperty] private bool _isPremiumLocked;
 
+    /// <summary>True when this leg is being solved for Premium (the Premium cell is readonly).</summary>
+    [ObservableProperty] private bool _isPremiumReadOnly;
+
+    /// <summary>True when this leg is being solved for Premium Amount (the Premium Amount cell is readonly).</summary>
+    [ObservableProperty] private bool _isPremiumAmountReadOnly;
+
     // Validation
     [ObservableProperty] private bool _hasValidationError;
 
@@ -107,6 +113,30 @@ public partial class TradeLegViewModel : ObservableObject
     /// <summary>Number of decimal places the user entered for hedge notional (only when result has fraction).</summary>
     private int? _userHedgeNotionalDecimals;
 
+    /// <summary>
+    /// Snapshot of PremiumText taken just before "?" triggers solving.
+    /// Restored when the user cancels the solve dialog.
+    /// </summary>
+    private string? _preSolvePremiumText;
+
+    /// <summary>
+    /// Snapshot of PremiumAmountText taken just before "?" triggers solving.
+    /// Restored when the user cancels the solve dialog.
+    /// </summary>
+    private string? _preSolvePremiumAmountText;
+
+    /// <summary>Snapshot of _lastValidPremium taken before solving starts.</summary>
+    private decimal? _preSolveLastValidPremium;
+
+    /// <summary>Snapshot of _userPremiumDecimals taken before solving starts.</summary>
+    private int? _preSolveUserPremiumDecimals;
+
+    /// <summary>Snapshot of _lastValidPremiumAmount taken before solving starts.</summary>
+    private decimal? _preSolveLastValidPremiumAmount;
+
+    /// <summary>Snapshot of _userPremiumAmountDecimals taken before solving starts.</summary>
+    private int? _preSolveUserPremiumAmountDecimals;
+
     public bool HasHedge => Hedge != HedgeType.No;
 
     /// <summary>True if this is the first leg — only Leg 1 can edit Counterpart/CurrencyPair.</summary>
@@ -134,6 +164,9 @@ public partial class TradeLegViewModel : ObservableObject
 
     /// <summary>Default minimum decimal places for premium: pips = 1, % = 3.</summary>
     private int PremiumDefaultDecimals => IsPremiumPct ? 3 : 1;
+
+    /// <summary>Exposed for MainViewModel to use when formatting a solved premium value.</summary>
+    public int PremiumDefaultDecimalsPublic => PremiumDefaultDecimals;
 
     public string PremiumStyleDisplay => PremiumStyle switch
     {
@@ -249,10 +282,12 @@ public partial class TradeLegViewModel : ObservableObject
         _parent.UpdateTotalPremium();
     }
 
-    partial void OnPremiumTextChanged(string value)
+    partial void OnPremiumTextChanged(string? oldValue, string newValue)
     {
-        if (value == "?")
+        if (newValue == "?")
         {
+            // Save the text that was in the cell right before the user typed "?"
+            _preSolvePremiumText = oldValue ?? string.Empty;
             _parent.StartSolving(this, isByAmount: false);
             return;
         }
@@ -260,10 +295,12 @@ public partial class TradeLegViewModel : ObservableObject
         _parent.UpdateTotalPremium();
     }
 
-    partial void OnPremiumAmountTextChanged(string value)
+    partial void OnPremiumAmountTextChanged(string? oldValue, string newValue)
     {
-        if (value == "?")
+        if (newValue == "?")
         {
+            // Save the text that was in the cell right before the user typed "?"
+            _preSolvePremiumAmountText = oldValue ?? string.Empty;
             _parent.StartSolving(this, isByAmount: true);
             return;
         }
@@ -351,11 +388,6 @@ public partial class TradeLegViewModel : ObservableObject
 
     // --- Strike Input Handling ---
 
-    /// <summary>
-    /// Validates and formats strike input. Comma → dot. Only numbers accepted.
-    /// Formats using StrikeMinDecimals (4 or 2 for JPY) as minimum, preserving more if user typed them.
-    /// Invalid → revert to last valid.
-    /// </summary>
     public void ApplyStrikeInput(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -381,11 +413,6 @@ public partial class TradeLegViewModel : ObservableObject
 
     // --- Hedge Rate Input Handling ---
 
-    /// <summary>
-    /// Validates and formats hedge rate input. Same behaviour as strike:
-    /// comma → dot, only numbers accepted, uses StrikeMinDecimals as minimum,
-    /// preserves extra decimals if the user typed them, invalid → revert to last valid.
-    /// </summary>
     public void ApplyHedgeRateInput(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -409,10 +436,6 @@ public partial class TradeLegViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Formats a rate value with at least StrikeMinDecimals for the current pair,
-    /// preserving any extra decimals the user entered.
-    /// </summary>
     private string FormatStrike(decimal value)
     {
         var raw = value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture);
@@ -608,6 +631,69 @@ public partial class TradeLegViewModel : ObservableObject
         }
     }
 
+    // --- Solving helpers ---
+
+    /// <summary>
+    /// Clears the field being solved and marks the corresponding cell as readonly.
+    /// Snapshots are taken in OnPremiumTextChanged/OnPremiumAmountTextChanged before this runs.
+    /// </summary>
+    public void ClearSolvingField(bool isByAmount)
+    {
+        _isRecalculating = true;
+        if (isByAmount)
+        {
+            IsPremiumAmountReadOnly = true;
+            IsPremiumReadOnly = false;
+            _lastValidPremiumAmount = null;
+            _userPremiumAmountDecimals = null;
+            SetProperty(ref _premiumAmountText, string.Empty, nameof(PremiumAmountText));
+        }
+        else
+        {
+            IsPremiumReadOnly = true;
+            IsPremiumAmountReadOnly = true;
+            _lastValidPremium = null;
+            _userPremiumDecimals = null;
+            _lastValidPremiumAmount = null;
+            _userPremiumAmountDecimals = null;
+            SetProperty(ref _premiumText, string.Empty, nameof(PremiumText));
+            SetProperty(ref _premiumAmountText, string.Empty, nameof(PremiumAmountText));
+        }
+        _isRecalculating = false;
+    }
+
+    /// <summary>
+    /// Writes back the premium text that was in the cell before "?" was typed.
+    /// Uses the public property setter so the full recalculation chain runs
+    /// and the WPF TextBox is forced to update regardless of focus state.
+    /// </summary>
+    public void RestorePreSolveValues()
+    {
+        if (_preSolvePremiumText != null)
+        {
+            // Re-apply through the same path as manual user input
+            ApplyPremiumInput(_preSolvePremiumText);
+            _preSolvePremiumText = null;
+        }
+
+        if (_preSolvePremiumAmountText != null)
+        {
+            ApplyPremiumAmountInput(_preSolvePremiumAmountText);
+            _preSolvePremiumAmountText = null;
+        }
+    }
+
+    /// <summary>
+    /// Resets all solving-related readonly flags on this leg.
+    /// </summary>
+    public void ClearSolvingFlags()
+    {
+        IsSolvingTarget = false;
+        IsPremiumLocked = false;
+        IsPremiumReadOnly = false;
+        IsPremiumAmountReadOnly = false;
+    }
+
     // --- Methods ---
 
     public void ToggleBuySell() => BuySell = BuySell == BuySell.Buy ? BuySell.Sell : BuySell.Buy;
@@ -623,7 +709,6 @@ public partial class TradeLegViewModel : ObservableObject
     [RelayCommand]
     public void TogglePremiumStyle()
     {
-        // Cycle: PctBase → PipsQuote → PctQuote → PctBase
         var nextStyle = PremiumStyle switch
         {
             PremiumStyle.PctBase => PremiumStyle.PipsQuote,
@@ -632,7 +717,6 @@ public partial class TradeLegViewModel : ObservableObject
             _ => PremiumStyle.PctBase
         };
 
-        // Propagate to all legs
         _parent.SetAllPremiumStyle(nextStyle);
     }
 
@@ -759,8 +843,6 @@ public partial class TradeLegViewModel : ObservableObject
         Trader = source.Trader;
         Mic = source.Mic;
         Broker = source.Broker;
-        // Hedge type is NOT copied — new legs always default to HedgeType.No
         _cachedSpotDate = source._cachedSpotDate;
-        // Premium NOT copied (per legacy behavior)
     }
 }

@@ -498,8 +498,9 @@
     </Style>
 
     <!-- ==================== BUTTON STYLES ==================== -->
+
+    <!-- ZERO — blå (matchar AccentBlue / zero cost i UI) -->
     <Style x:Key="TradingButton" TargetType="Button">
-        <Setter Property="Background" Value="{StaticResource AccentBlueDarkBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextWhiteBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="16,8"/>
@@ -511,7 +512,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="border"
-                            Background="{TemplateBinding Background}"
+                            Background="{StaticResource AccentBlueDarkBrush}"
                             CornerRadius="6"
                             Padding="{TemplateBinding Padding}"
                             SnapsToDevicePixels="True">
@@ -519,11 +520,11 @@
                                           VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="true">
+                        <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="border" Property="Background"
                                     Value="{StaticResource AccentBlueBrush}"/>
                         </Trigger>
-                        <Trigger Property="IsPressed" Value="true">
+                        <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="border" Property="Background"
                                     Value="{StaticResource AccentBlueDarkBrush}"/>
                         </Trigger>
@@ -533,30 +534,74 @@
         </Setter>
     </Style>
 
-    <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource TradingButton}">
-        <Setter Property="Background">
+    <!-- PAY — röd (matchar NegativeRed / client pays i UI) -->
+    <Style x:Key="DangerButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource TextWhiteBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="16,8"/>
+        <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
             <Setter.Value>
-                <SolidColorBrush Color="#FF7F1D1D"/>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="border"
+                            Background="{StaticResource NegativeRedDarkBrush}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource NegativeRedBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource NegativeRedDarkBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
             </Setter.Value>
         </Setter>
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="true">
-                <Setter Property="Background" Value="{StaticResource NegativeRedBrush}"/>
-            </Trigger>
-        </Style.Triggers>
     </Style>
 
-    <Style x:Key="SuccessButton" TargetType="Button" BasedOn="{StaticResource TradingButton}">
-        <Setter Property="Background">
+    <!-- RECEIVE — grön (matchar PositiveGreen / client receives i UI) -->
+    <Style x:Key="SuccessButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource TextWhiteBrush}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="16,8"/>
+        <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
             <Setter.Value>
-                <SolidColorBrush Color="#FF065F46"/>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="border"
+                            Background="{StaticResource PositiveGreenDarkBrush}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource PositiveGreenBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource PositiveGreenDarkBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
             </Setter.Value>
         </Setter>
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="true">
-                <Setter Property="Background" Value="{StaticResource PositiveGreenBrush}"/>
-            </Trigger>
-        </Style.Triggers>
     </Style>
 
     <!-- ==================== TOOLBAR BUTTON ==================== -->

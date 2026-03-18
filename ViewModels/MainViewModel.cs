@@ -50,13 +50,13 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Brush resource key for total premium color:
-    /// negative (pay) → "NegativeRedBrush", positive (receive) → "AccentBlueBrush", zero → "PositiveGreenBrush".
+    /// negative (pay) → "NegativeRedBrush", positive (receive) → "PositiveGreenBrush", zero → "AccentBlueBrush".
     /// </summary>
     public string TotalPremiumBrushKey => TotalPremium switch
     {
         < 0 => "NegativeRedBrush",
-        > 0 => "AccentBlueBrush",
-        _ => "PositiveGreenBrush"
+        > 0 => "PositiveGreenBrush",
+        _ => "AccentBlueBrush"
     };
 
     /// <summary>Holiday calendar data loaded from the AHS database.</summary>
@@ -70,12 +70,19 @@ public partial class MainViewModel : ObservableObject
     // Solving state
     private TradeLegViewModel? _solvingLeg;
     private bool _solvingByAmount;
+    private bool _suppressTotalPremiumUpdate;
 
     /// <summary>
     /// Raised when a distributor combo should clear its selection after distributing.
     /// The string parameter is the field name (e.g. "Counterpart", "CurrencyPair", "Cut").
     /// </summary>
     public event Action<string>? DistributorClearRequested;
+
+    /// <summary>
+    /// Raised when solve mode starts and the view should show the SolvingDialog.
+    /// Parameters: isByAmount, premiumStyleDisplay (e.g. "SEK pips" or "SEK").
+    /// </summary>
+    public event Action<bool, string>? SolvingDialogRequested;
 
     // --- Initialization ---
 
@@ -162,6 +169,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ClearAll()
     {
+        CancelSolving();
         Legs.Clear();
         AddLegInternal();
         OnPropertyChanged(nameof(HasMultipleLegs));
@@ -327,13 +335,24 @@ public partial class MainViewModel : ObservableObject
 
     // --- Solving ---
 
+    /// <summary>
+    /// Enters solve mode. The solving leg's premium/premiumAmount is cleared and made readonly.
+    /// Other legs' premiums are locked. The SolvingDialog is opened immediately.
+    /// </summary>
     public void StartSolving(TradeLegViewModel solvingLeg, bool isByAmount)
     {
         if (Legs.Count < 2) return;
 
+        bool othersHavePremium = Legs.Where(l => l != solvingLeg)
+                                     .All(l => l.PremiumAmount.HasValue);
+        if (!othersHavePremium) return;
+
         _solvingLeg = solvingLeg;
         _solvingByAmount = isByAmount;
         IsSolvingMode = true;
+
+        // Suppress UpdateTotalPremium while we clear fields so the total doesn't flicker.
+        _suppressTotalPremiumUpdate = true;
 
         foreach (var leg in Legs)
         {
@@ -341,6 +360,7 @@ public partial class MainViewModel : ObservableObject
             {
                 leg.IsSolvingTarget = true;
                 leg.IsPremiumLocked = false;
+                leg.ClearSolvingField(isByAmount);
             }
             else
             {
@@ -348,11 +368,23 @@ public partial class MainViewModel : ObservableObject
                 leg.IsPremiumLocked = true;
             }
         }
+
+        _suppressTotalPremiumUpdate = false;
+
+        string unitDisplay = isByAmount
+            ? $"Premium Amount [{solvingLeg.PremiumCurrency}]"
+            : $"Premium [{solvingLeg.PremiumStyleDisplay}]";
+
+        SolvingDialogRequested?.Invoke(isByAmount, unitDisplay);
     }
 
-    public void SolvePremium(decimal targetTotal, string payReceive)
+    /// <summary>
+    /// Solves the premium for the target leg given a total and pay/receive direction.
+    /// Returns null on success, or an error message if the result violates Buy/Sell sign rules.
+    /// </summary>
+    public string? SolvePremium(decimal targetTotal, string payReceive)
     {
-        if (_solvingLeg == null) return;
+        if (_solvingLeg == null) return "No solving leg set.";
 
         decimal signedTarget = payReceive switch
         {
@@ -362,35 +394,86 @@ public partial class MainViewModel : ObservableObject
             _ => targetTotal
         };
 
-        var sumOthers = Legs.Where(l => l != _solvingLeg)
-                            .Sum(l => l.PremiumAmount ?? 0m);
-
-        var solvedAmount = signedTarget - sumOthers;
+        decimal solvedAmount;
 
         if (_solvingByAmount)
         {
-            _solvingLeg.PremiumAmountText = solvedAmount.ToString("N2",
-                System.Globalization.CultureInfo.InvariantCulture);
+            var sumOthers = Legs.Where(l => l != _solvingLeg)
+                                .Sum(l => l.PremiumAmount ?? 0m);
+
+            solvedAmount = signedTarget - sumOthers;
         }
         else
         {
-            _solvingLeg.PremiumAmountText = solvedAmount.ToString("N2",
-                System.Globalization.CultureInfo.InvariantCulture);
+            // The target is expressed in leg 1's premium style (pips/pct relative to leg 1's notional).
+            // Convert to absolute amount, solve by amount, then convert back to the solving leg's pips/pct.
+            var leg1 = Legs[0];
+
+            // Convert target pips/pct → absolute amount using leg 1's notional
+            var targetAmount = PremiumCalculator.CalculateAmount(
+                signedTarget, leg1.Notional, leg1.PremiumStyle, leg1.Strike);
+
+            var sumOthersAmount = Legs.Where(l => l != _solvingLeg)
+                                      .Sum(l => l.PremiumAmount ?? 0m);
+
+            solvedAmount = (targetAmount ?? 0m) - sumOthersAmount;
         }
 
-        CancelSolving();
+        // Validate: Buy leg must have negative (pay) premium, Sell leg must have positive (receive) premium.
+        // Zero is always allowed.
+        if (solvedAmount != 0)
+        {
+            bool isBuy = _solvingLeg.BuySell == BuySell.Buy;
+            if (isBuy && solvedAmount > 0)
+                return $"Cannot solve: Leg {_solvingLeg.LegNumber} is a BUY — client cannot receive premium on a bought option.";
+            if (!isBuy && solvedAmount < 0)
+                return $"Cannot solve: Leg {_solvingLeg.LegNumber} is a SELL — client cannot pay premium on a sold option.";
+        }
+
+        // Apply the solved value
+        if (_solvingByAmount)
+        {
+            _solvingLeg.ApplyPremiumAmountInput(
+                solvedAmount.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            var solvedPremium = PremiumCalculator.CalculatePremium(
+                solvedAmount, _solvingLeg.Notional, _solvingLeg.PremiumStyle, _solvingLeg.Strike);
+
+            _solvingLeg.ApplyPremiumInput(
+                (solvedPremium ?? 0m).ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        // Solve succeeded — exit solve mode WITHOUT restoring old values.
+        FinishSolving();
+        return null;
     }
 
     [RelayCommand]
-    private void CancelSolving()
+    public void CancelSolving()
+    {
+        if (!IsSolvingMode) return;
+
+        // Restore the solving leg's premium fields to what they were before "?" was typed.
+        _solvingLeg?.RestorePreSolveValues();
+
+        FinishSolving();
+    }
+
+    /// <summary>
+    /// Exits solve mode: clears all flags and updates totals.
+    /// Does NOT restore pre-solve values — that is only done by CancelSolving.
+    /// </summary>
+    private void FinishSolving()
     {
         IsSolvingMode = false;
         _solvingLeg = null;
+
         foreach (var leg in Legs)
-        {
-            leg.IsSolvingTarget = false;
-            leg.IsPremiumLocked = false;
-        }
+            leg.ClearSolvingFlags();
+
+        UpdateTotalPremium();
     }
 
     // --- Internal ---
@@ -418,6 +501,8 @@ public partial class MainViewModel : ObservableObject
 
     public void UpdateTotalPremium()
     {
+        if (_suppressTotalPremiumUpdate) return;
+
         TotalPremium = Legs.Sum(l => l.PremiumAmount ?? 0m);
         TotalPremiumDisplay = TotalPremium switch
         {
@@ -428,7 +513,6 @@ public partial class MainViewModel : ObservableObject
 
         // --- Distributor column summaries ---
 
-        // Premium row: back-calculate total into leg 1's premium style (pips or %)
         var leg1 = Legs.Count > 0 ? Legs[0] : null;
         bool hasPremiumData = Legs.Any(l => l.PremiumAmount.HasValue);
 
@@ -439,8 +523,6 @@ public partial class MainViewModel : ObservableObject
 
             if (totalStyleValue.HasValue)
             {
-                // Match the same decimal format as leg Premium cells:
-                // pips default = 1 decimal, % default = 3 decimals
                 bool isPct = leg1.PremiumStyle is PremiumStyle.PctBase or PremiumStyle.PctQuote;
                 int decimals = isPct ? 3 : 1;
                 TotalPremiumStyleDisplay = totalStyleValue.Value.ToString(
@@ -456,7 +538,6 @@ public partial class MainViewModel : ObservableObject
             TotalPremiumStyleDisplay = string.Empty;
         }
 
-        // Premium Amount row: match leg PremiumAmount cells (N2 with thousand separators)
         TotalPremiumAmountDisplay = hasPremiumData
             ? TotalPremium.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
             : string.Empty;

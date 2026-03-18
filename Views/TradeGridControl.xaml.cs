@@ -111,6 +111,7 @@ public partial class TradeGridControl : UserControl
         {
             oldVm.Legs.CollectionChanged -= OnLegsChanged;
             oldVm.DistributorClearRequested -= OnDistributorClearRequested;
+            oldVm.SolvingDialogRequested -= OnSolvingDialogRequested;
             foreach (var leg in oldVm.Legs)
                 leg.PropertyChanged -= OnLegPropertyChanged;
         }
@@ -120,6 +121,7 @@ public partial class TradeGridControl : UserControl
             _vm = newVm;
             _vm.Legs.CollectionChanged += OnLegsChanged;
             _vm.DistributorClearRequested += OnDistributorClearRequested;
+            _vm.SolvingDialogRequested += OnSolvingDialogRequested;
             foreach (var leg in _vm.Legs)
                 leg.PropertyChanged += OnLegPropertyChanged;
             RebuildGrid();
@@ -140,6 +142,33 @@ public partial class TradeGridControl : UserControl
                 if (_distCut != null) _distCut.SelectedIndex = -1;
                 break;
         }
+    }
+
+    /// <summary>
+    /// When solve mode starts, immediately show the SolvingDialog.
+    /// </summary>
+    /// <summary>
+    /// When solve mode starts, immediately show the SolvingDialog.
+    /// </summary>
+    private void OnSolvingDialogRequested(bool isByAmount, string unitDisplay)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var ownerWindow = Window.GetWindow(this);
+            var dialog = new SolvingDialog(isByAmount, unitDisplay) { Owner = ownerWindow };
+
+            // Wire up the solve callback so validation errors stay in the dialog
+            dialog.SolveCallback = (target, payReceive) => _vm?.SolvePremium(target, payReceive);
+
+            if (dialog.ShowDialog() == true)
+            {
+                // Solve already applied inside the callback — nothing more to do.
+            }
+            else
+            {
+                _vm?.CancelSolvingCommand.Execute(null);
+            }
+        }, System.Windows.Threading.DispatcherPriority.Input);
     }
 
     private void OnLegsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -488,8 +517,7 @@ public partial class TradeGridControl : UserControl
         };
         AddCell(RowNotional, ColDistInput, distNotional);
 
-        // --- Premium summary in distributor column ---
-        // Read-only cells matching leg cell appearance, colored by pay/receive/zero
+        // --- Premium summary in distributor column (read-only totals) ---
         var brushConverter = new BrushKeyConverter(this);
 
         var totalPremiumStyleTb = new TextBox
@@ -593,18 +621,32 @@ public partial class TradeGridControl : UserControl
             AddCell(RowNotional, vc, notionalTb);
 
             // Premium — inline style toggle suffix, disabled until notional+strike present
+            // Bind IsReadOnly to IsPremiumReadOnly for solve mode
             var premiumTb = CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumText),
                 leg, nameof(leg.PremiumStyleDisplay), () => leg.TogglePremiumStyleCommand.Execute(null));
             premiumTb.SetBinding(TextBox.IsEnabledProperty,
                 new Binding(nameof(leg.PremiumInputEnabled)) { Source = leg });
+            premiumTb.SetBinding(TextBox.IsReadOnlyProperty,
+                new Binding(nameof(leg.IsPremiumReadOnly)) { Source = leg });
             AttachNumericHandlers(premiumTb, leg.ApplyPremiumInput);
             AddCell(RowPremium, vc, premiumTb);
 
             // Premium Amount — inline currency suffix toggle, disabled until notional+strike present
+            // Bind IsReadOnly to IsPremiumLocked OR IsPremiumAmountReadOnly
             var premAmtTb = CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumAmountText),
                 leg, nameof(leg.PremiumCurrency), () => leg.TogglePremiumStyleCommand.Execute(null));
             premAmtTb.SetBinding(TextBox.IsEnabledProperty,
                 new Binding(nameof(leg.PremiumInputEnabled)) { Source = leg });
+            premAmtTb.SetBinding(TextBox.IsReadOnlyProperty,
+                new MultiBinding
+                {
+                    Converter = new OrBoolConverter(),
+                    Bindings =
+                    {
+                        new Binding(nameof(leg.IsPremiumLocked)) { Source = leg },
+                        new Binding(nameof(leg.IsPremiumAmountReadOnly)) { Source = leg }
+                    }
+                });
             AttachNumericHandlers(premAmtTb, leg.ApplyPremiumAmountInput);
             AddCell(RowPremiumAmount, vc, premAmtTb);
 
@@ -1245,7 +1287,7 @@ public partial class TradeGridControl : UserControl
         => FindResource(key) as Style;
 
     // ================================================================
-    //  CONVERTER: Brush resource key string → SolidColorBrush
+    //  CONVERTERS
     // ================================================================
 
     /// <summary>
@@ -1266,6 +1308,25 @@ public partial class TradeGridControl : UserControl
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// MultiBinding converter: returns true if ANY of the bound bool values is true.
+    /// Used to combine IsPremiumLocked and IsPremiumAmountReadOnly into a single IsReadOnly.
+    /// </summary>
+    private sealed class OrBoolConverter : IMultiValueConverter
+    {
+        public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
+        {
+            foreach (var v in values)
+            {
+                if (v is true) return true;
+            }
+            return false;
+        }
+
+        public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
             => throw new NotImplementedException();
     }
 }
