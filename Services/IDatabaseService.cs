@@ -11,6 +11,6 @@ public interface IDatabaseService
     Task<string> GetSalesNameAsync(string username);
     Task<string> GetReportingEntityAsync(string salesName);
     Task<string> GetInvestmentDecisionIdAsync(string username);
-    Task SaveTradeAsync(IReadOnlyList<TradeLeg> legs);
+    //Task SaveTradeAsync(IReadOnlyList<TradeLeg> legs);
     Task<DataTable> LoadHolidaysAsync();
 }

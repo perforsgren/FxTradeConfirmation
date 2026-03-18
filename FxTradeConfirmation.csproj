@@ -23,5 +23,10 @@
     <PackageReference Include="MySql.Data" Version="9.6.0" />
     <PackageReference Include="System.Data.SqlClient" Version="4.9.1" />
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="FxSharedConfig">
+      <HintPath>..\FxSharedConfig\bin\Debug\FxSharedConfig.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 
 </Project>

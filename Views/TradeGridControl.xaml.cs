@@ -1,5 +1,6 @@
 ﻿using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -486,6 +487,46 @@ public partial class TradeGridControl : UserControl
             }
         };
         AddCell(RowNotional, ColDistInput, distNotional);
+
+        // --- Premium summary in distributor column ---
+        // Read-only cells matching leg cell appearance, colored by pay/receive/zero
+        var brushConverter = new BrushKeyConverter(this);
+
+        var totalPremiumStyleTb = new TextBox
+        {
+            Style = FindStyle<TextBox>("TradingTextBox"),
+            IsReadOnly = true,
+            Focusable = false,
+            HorizontalContentAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(2, 1, 2, 1)
+        };
+        totalPremiumStyleTb.SetBinding(TextBox.TextProperty,
+            new Binding(nameof(MainViewModel.TotalPremiumStyleDisplay)) { Source = _vm });
+        totalPremiumStyleTb.SetBinding(TextBox.ForegroundProperty,
+            new Binding(nameof(MainViewModel.TotalPremiumBrushKey))
+            {
+                Source = _vm,
+                Converter = brushConverter
+            });
+        AddCell(RowPremium, ColDistInput, totalPremiumStyleTb);
+
+        var totalPremiumAmountTb = new TextBox
+        {
+            Style = FindStyle<TextBox>("TradingTextBox"),
+            IsReadOnly = true,
+            Focusable = false,
+            HorizontalContentAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(2, 1, 2, 1)
+        };
+        totalPremiumAmountTb.SetBinding(TextBox.TextProperty,
+            new Binding(nameof(MainViewModel.TotalPremiumAmountDisplay)) { Source = _vm });
+        totalPremiumAmountTb.SetBinding(TextBox.ForegroundProperty,
+            new Binding(nameof(MainViewModel.TotalPremiumBrushKey))
+            {
+                Source = _vm,
+                Converter = brushConverter
+            });
+        AddCell(RowPremiumAmount, ColDistInput, totalPremiumAmountTb);
 
         // Leg columns
         for (int i = 0; i < legCount; i++)
@@ -1202,4 +1243,29 @@ public partial class TradeGridControl : UserControl
 
     private Style? FindStyle<T>(string key)
         => FindResource(key) as Style;
+
+    // ================================================================
+    //  CONVERTER: Brush resource key string → SolidColorBrush
+    // ================================================================
+
+    /// <summary>
+    /// Converts a brush resource key string (e.g. "NegativeRedBrush") to the actual
+    /// <see cref="SolidColorBrush"/> by looking it up in the owning element's resource tree.
+    /// </summary>
+    private sealed class BrushKeyConverter(FrameworkElement owner) : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is string key)
+            {
+                var resource = owner.TryFindResource(key);
+                if (resource is SolidColorBrush brush)
+                    return brush;
+            }
+            return Brushes.Gray;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+            => throw new NotImplementedException();
+    }
 }

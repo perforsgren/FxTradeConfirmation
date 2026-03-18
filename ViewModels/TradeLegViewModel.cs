@@ -140,7 +140,6 @@ public partial class TradeLegViewModel : ObservableObject
         PremiumStyle.PctBase => $"%{BaseCurrency}",
         PremiumStyle.PipsQuote => $"{QuoteCurrency} pips",
         PremiumStyle.PctQuote => $"%{QuoteCurrency}",
-        PremiumStyle.PipsBase => $"{BaseCurrency} pips",
         _ => ""
     };
 
@@ -228,6 +227,12 @@ public partial class TradeLegViewModel : ObservableObject
         OnPropertyChanged(nameof(Notional));
         OnPropertyChanged(nameof(PremiumInputEnabled));
         RecalculatePremiumFromPremiumText();
+        _parent.UpdateTotalPremium();
+    }
+
+    partial void OnNotionalCurrencyChanged(string value)
+    {
+        _parent.UpdateTotalPremium();
     }
 
     partial void OnPremiumStyleChanged(PremiumStyle value)
@@ -236,6 +241,12 @@ public partial class TradeLegViewModel : ObservableObject
         OnPropertyChanged(nameof(PremiumStyleDisplay));
         _userPremiumDecimals = null;
         RecalculatePremiumFromPremiumText();
+        _parent.UpdateTotalPremium();
+    }
+
+    partial void OnPremiumCurrencyChanged(string value)
+    {
+        _parent.UpdateTotalPremium();
     }
 
     partial void OnPremiumTextChanged(string value)
@@ -334,7 +345,6 @@ public partial class TradeLegViewModel : ObservableObject
             PremiumStyle.PctBase => BaseCurrency,
             PremiumStyle.PipsQuote => QuoteCurrency,
             PremiumStyle.PctQuote => QuoteCurrency,
-            PremiumStyle.PipsBase => BaseCurrency,
             _ => QuoteCurrency
         };
     }
@@ -606,20 +616,24 @@ public partial class TradeLegViewModel : ObservableObject
     [RelayCommand]
     public void ToggleNotionalCurrency()
     {
-        NotionalCurrency = NotionalCurrency == BaseCurrency ? QuoteCurrency : BaseCurrency;
+        var newCurrency = NotionalCurrency == BaseCurrency ? QuoteCurrency : BaseCurrency;
+        _parent.SetAllNotionalCurrency(newCurrency);
     }
 
     [RelayCommand]
     public void TogglePremiumStyle()
     {
-        PremiumStyle = PremiumStyle switch
+        // Cycle: PctBase → PipsQuote → PctQuote → PctBase
+        var nextStyle = PremiumStyle switch
         {
             PremiumStyle.PctBase => PremiumStyle.PipsQuote,
             PremiumStyle.PipsQuote => PremiumStyle.PctQuote,
-            PremiumStyle.PctQuote => PremiumStyle.PipsBase,
-            PremiumStyle.PipsBase => PremiumStyle.PctBase,
+            PremiumStyle.PctQuote => PremiumStyle.PctBase,
             _ => PremiumStyle.PctBase
         };
+
+        // Propagate to all legs
+        _parent.SetAllPremiumStyle(nextStyle);
     }
 
     [RelayCommand]

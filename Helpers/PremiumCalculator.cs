@@ -26,12 +26,6 @@ public static class PremiumCalculator
                 ? premium.Value * notional.Value * strike.Value / 100m
                 : null,
 
-            // Base-ccy pips → amount = premium * notional / 10 000
-            // (pips in base ccy: divide by strike to convert from quote pips equivalent)
-            PremiumStyle.PipsBase => strike.HasValue && strike.Value != 0
-                ? premium.Value * notional.Value / 10_000m / strike.Value
-                : null,
-
             _ => null
         };
     }
@@ -52,10 +46,6 @@ public static class PremiumCalculator
 
             PremiumStyle.PctQuote => strike.HasValue && strike.Value != 0
                 ? premiumAmount.Value / (notional.Value * strike.Value) * 100m
-                : null,
-
-            PremiumStyle.PipsBase => strike.HasValue && strike.Value != 0
-                ? premiumAmount.Value * strike.Value / notional.Value * 10_000m
                 : null,
 
             _ => null

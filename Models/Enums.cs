@@ -24,14 +24,12 @@ public enum HedgeType
 /// PctBase   = % of base currency notional   (premium amount in base ccy)
 /// PipsQuote = pips in quote (price) currency (premium amount in quote ccy)
 /// PctQuote  = % of quote currency notional   (premium amount in quote ccy)
-/// PipsBase  = pips in base currency          (premium amount in base ccy)
 /// </summary>
 public enum PremiumStyle
 {
     PctBase,
     PipsQuote,
-    PctQuote,
-    PipsBase
+    PctQuote
 }
 
 public enum PremiumDateType

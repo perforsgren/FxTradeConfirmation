@@ -137,7 +137,6 @@ public class EmailService : IEmailService
             PremiumStyle.PctBase => $"{leg.Premium.Value:N4}% {leg.BaseCurrency}",
             PremiumStyle.PipsQuote => $"{leg.Premium.Value:N4} {leg.QuoteCurrency} pips",
             PremiumStyle.PctQuote => $"{leg.Premium.Value:N4}% {leg.QuoteCurrency}",
-            PremiumStyle.PipsBase => $"{leg.Premium.Value:N4} {leg.BaseCurrency} pips",
             _ => $"{leg.Premium.Value:N4}"
         };
     }

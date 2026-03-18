@@ -36,6 +36,29 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _totalPremiumDisplay = string.Empty;
     [ObservableProperty] private string _statusMessage = string.Empty;
 
+    /// <summary>
+    /// Total premium expressed in leg 1's premium style (pips or %).
+    /// Shown in the distributor column on the Premium row.
+    /// </summary>
+    [ObservableProperty] private string _totalPremiumStyleDisplay = string.Empty;
+
+    /// <summary>
+    /// Total premium amount (absolute currency amount) formatted for the distributor column.
+    /// Shown on the Premium Amount row.
+    /// </summary>
+    [ObservableProperty] private string _totalPremiumAmountDisplay = string.Empty;
+
+    /// <summary>
+    /// Brush resource key for total premium color:
+    /// negative (pay) → "NegativeRedBrush", positive (receive) → "AccentBlueBrush", zero → "PositiveGreenBrush".
+    /// </summary>
+    public string TotalPremiumBrushKey => TotalPremium switch
+    {
+        < 0 => "NegativeRedBrush",
+        > 0 => "AccentBlueBrush",
+        _ => "PositiveGreenBrush"
+    };
+
     /// <summary>Holiday calendar data loaded from the AHS database.</summary>
     public DataTable Holidays { get; private set; } = new();
 
@@ -145,30 +168,17 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(HasAnyHedge));
         TotalPremium = 0;
         TotalPremiumDisplay = string.Empty;
+        TotalPremiumStyleDisplay = string.Empty;
+        TotalPremiumAmountDisplay = string.Empty;
+        OnPropertyChanged(nameof(TotalPremiumBrushKey));
     }
 
     [RelayCommand]
     private async Task SaveAsync()
     {
-        if (!ValidateAllLegs())
-        {
-            StatusMessage = "Please fill in all required fields";
-            return;
-        }
-
-        try
-        {
-            foreach (var leg in Legs)
-                leg.ExecutionTime = DateTime.UtcNow.ToString("yyyyMMdd HH:mm:ss:fff");
-
-            var models = Legs.Select(l => l.ToModel()).ToList();
-            await DatabaseService.SaveTradeAsync(models);
-            StatusMessage = "Trade saved successfully";
-        }
-        catch (Exception ex)
-        {
-            StatusMessage = $"Save failed: {ex.Message}";
-        }
+        // TODO: Implementeras när ny tabellstruktur är klar
+        StatusMessage = "Save not yet implemented.";
+        await Task.CompletedTask;
     }
 
     [RelayCommand]
@@ -269,6 +279,26 @@ public partial class MainViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(value)) return;
         foreach (var leg in Legs) leg.ApplyHedgeRateInput(value);
+    }
+
+    /// <summary>
+    /// Sets premium style on all legs simultaneously.
+    /// Called by any leg's TogglePremiumStyle so all legs stay in sync.
+    /// </summary>
+    public void SetAllPremiumStyle(PremiumStyle style)
+    {
+        foreach (var leg in Legs)
+            leg.PremiumStyle = style;
+    }
+
+    /// <summary>
+    /// Sets notional currency on all legs simultaneously.
+    /// Called when any leg changes its notional currency so all legs stay in sync.
+    /// </summary>
+    public void SetAllNotionalCurrency(string currency)
+    {
+        foreach (var leg in Legs)
+            leg.NotionalCurrency = currency;
     }
 
     // --- Propagation from Leg 1 ---
@@ -395,7 +425,44 @@ public partial class MainViewModel : ObservableObject
             < 0 => $"Client pays {Math.Abs(TotalPremium):N2}",
             _ => "Zero cost"
         };
+
+        // --- Distributor column summaries ---
+
+        // Premium row: back-calculate total into leg 1's premium style (pips or %)
+        var leg1 = Legs.Count > 0 ? Legs[0] : null;
+        bool hasPremiumData = Legs.Any(l => l.PremiumAmount.HasValue);
+
+        if (hasPremiumData && leg1?.Notional is > 0)
+        {
+            var totalStyleValue = PremiumCalculator.CalculatePremium(
+                TotalPremium, leg1.Notional, leg1.PremiumStyle, leg1.Strike);
+
+            if (totalStyleValue.HasValue)
+            {
+                // Match the same decimal format as leg Premium cells:
+                // pips default = 1 decimal, % default = 3 decimals
+                bool isPct = leg1.PremiumStyle is PremiumStyle.PctBase or PremiumStyle.PctQuote;
+                int decimals = isPct ? 3 : 1;
+                TotalPremiumStyleDisplay = totalStyleValue.Value.ToString(
+                    $"F{decimals}", System.Globalization.CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                TotalPremiumStyleDisplay = string.Empty;
+            }
+        }
+        else
+        {
+            TotalPremiumStyleDisplay = string.Empty;
+        }
+
+        // Premium Amount row: match leg PremiumAmount cells (N2 with thousand separators)
+        TotalPremiumAmountDisplay = hasPremiumData
+            ? TotalPremium.ToString("N2", System.Globalization.CultureInfo.InvariantCulture)
+            : string.Empty;
+
         OnPropertyChanged(nameof(HasMultipleLegs));
+        OnPropertyChanged(nameof(TotalPremiumBrushKey));
     }
 
     public void NotifyLegChanged()
