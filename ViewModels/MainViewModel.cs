@@ -1,7 +1,9 @@
 ﻿using System.Collections.ObjectModel;
+using System.Data;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FxTradeConfirmation.Helpers;
 using FxTradeConfirmation.Models;
 using FxTradeConfirmation.Services;
 
@@ -34,6 +36,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _totalPremiumDisplay = string.Empty;
     [ObservableProperty] private string _statusMessage = string.Empty;
 
+    /// <summary>Holiday calendar data loaded from the AHS database.</summary>
+    public DataTable Holidays { get; private set; } = new();
+
     public ObservableCollection<TradeLegViewModel> Legs { get; } = [];
 
     public bool HasMultipleLegs => Legs.Count > 1;
@@ -45,7 +50,7 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Raised when a distributor combo should clear its selection after distributing.
-    /// The string parameter is the field name ("Counterpart" or "CurrencyPair").
+    /// The string parameter is the field name (e.g. "Counterpart", "CurrencyPair", "Cut").
     /// </summary>
     public event Action<string>? DistributorClearRequested;
 
@@ -65,6 +70,19 @@ public partial class MainViewModel : ObservableObject
             Application.Current.Dispatcher.Invoke(() => ReferenceData = data);
 
             await SetupUserDefaults();
+        }
+
+        // Load holiday calendar (from AHS SQL Server, independent of MySQL connection)
+        try
+        {
+            Holidays = await DatabaseService.LoadHolidaysAsync();
+        }
+        catch
+        {
+            // Fallback: empty table — date parsing will still work for direct dates
+            Holidays = new DataTable();
+            Holidays.Columns.Add("Market", typeof(string));
+            Holidays.Columns.Add("HolidayDate", typeof(DateTime));
         }
 
         StartConnectionMonitor();
@@ -212,35 +230,45 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void SetAllStrike(string value)
     {
-        foreach (var leg in Legs) leg.StrikeText = value;
+        if (string.IsNullOrWhiteSpace(value)) return;
+        foreach (var leg in Legs) leg.ApplyStrikeInput(value);
     }
 
     [RelayCommand]
     private void SetAllExpiry(string value)
     {
+        if (string.IsNullOrWhiteSpace(value)) return;
+
         foreach (var leg in Legs)
-        {
-            // Parse and set dates using DateConvention
-            // This will be wired up to use the legacy date parsing logic
-        }
+            leg.ApplyExpiryInput(value);
     }
 
     [RelayCommand]
     private void SetAllCut(string value)
     {
         foreach (var leg in Legs) leg.Cut = value;
+        DistributorClearRequested?.Invoke(nameof(TradeLegViewModel.Cut));
     }
 
     [RelayCommand]
     private void SetAllNotional(string value)
     {
-        foreach (var leg in Legs) leg.NotionalText = value;
+        if (string.IsNullOrWhiteSpace(value)) return;
+        foreach (var leg in Legs) leg.ApplyNotionalInput(value);
+    }
+
+    [RelayCommand]
+    private void SetAllHedgeNotional(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        foreach (var leg in Legs) leg.ApplyHedgeNotionalInput(value);
     }
 
     [RelayCommand]
     private void SetAllHedgeRate(string value)
     {
-        foreach (var leg in Legs) leg.HedgeRateText = value;
+        if (string.IsNullOrWhiteSpace(value)) return;
+        foreach (var leg in Legs) leg.ApplyHedgeRateInput(value);
     }
 
     // --- Propagation from Leg 1 ---

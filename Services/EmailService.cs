@@ -127,12 +127,20 @@ public class EmailService : IEmailService
     private static string FormatNotional(decimal? notional, string currency) =>
         notional.HasValue ? $"{notional.Value:N0} {currency}" : Highlight("N/A");
 
-    private static string FormatPremium(TradeLeg leg) =>
-        leg.Premium.HasValue
-            ? leg.PremiumStyle == PremiumStyle.Pips
-                ? $"{leg.Premium.Value:N4} pips"
-                : $"{leg.Premium.Value:N4}%"
-            : Highlight("N/A");
+    private static string FormatPremium(TradeLeg leg)
+    {
+        if (!leg.Premium.HasValue)
+            return Highlight("N/A");
+
+        return leg.PremiumStyle switch
+        {
+            PremiumStyle.PctBase => $"{leg.Premium.Value:N4}% {leg.BaseCurrency}",
+            PremiumStyle.PipsQuote => $"{leg.Premium.Value:N4} {leg.QuoteCurrency} pips",
+            PremiumStyle.PctQuote => $"{leg.Premium.Value:N4}% {leg.QuoteCurrency}",
+            PremiumStyle.PipsBase => $"{leg.Premium.Value:N4} {leg.BaseCurrency} pips",
+            _ => $"{leg.Premium.Value:N4}"
+        };
+    }
 
     private static string FormatPremiumAmount(TradeLeg leg) =>
         leg.PremiumAmount.HasValue

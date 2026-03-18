@@ -21,7 +21,7 @@ public class TradeLeg
     public decimal? PremiumAmount { get; set; }
     public string PremiumCurrency { get; set; } = string.Empty;
     public DateTime? PremiumDate { get; set; }
-    public PremiumStyle PremiumStyle { get; set; } = PremiumStyle.Pips;
+    public PremiumStyle PremiumStyle { get; set; } = PremiumStyle.PipsQuote;
     public PremiumDateType PremiumDateType { get; set; } = PremiumDateType.Spot;
     public string PortfolioMX3 { get; set; } = string.Empty;
     public string Trader { get; set; } = "P901PEF";

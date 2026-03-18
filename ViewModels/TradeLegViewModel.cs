@@ -35,7 +35,7 @@ public partial class TradeLegViewModel : ObservableObject
     [ObservableProperty] private string _premiumAmountText = string.Empty;
     [ObservableProperty] private string _premiumCurrency = "SEK";
     [ObservableProperty] private DateTime? _premiumDate;
-    [ObservableProperty] private PremiumStyle _premiumStyle = PremiumStyle.Pips;
+    [ObservableProperty] private PremiumStyle _premiumStyle = PremiumStyle.PipsQuote;
     [ObservableProperty] private PremiumDateType _premiumDateType = PremiumDateType.Spot;
     [ObservableProperty] private string _portfolioMX3 = string.Empty;
     [ObservableProperty] private string _trader = Environment.UserName.ToUpper();
@@ -68,6 +68,45 @@ public partial class TradeLegViewModel : ObservableObject
     // Validation
     [ObservableProperty] private bool _hasValidationError;
 
+    /// <summary>
+    /// The raw expiry input text shown in the TextBox. User types tenor or date here.
+    /// On LostFocus, ApplyExpiryInput() is called which parses it and sets ExpiryDate/SettlementDate.
+    /// If invalid, the last valid expiry date is restored.
+    /// </summary>
+    [ObservableProperty] private string _expiryText = string.Empty;
+
+    private DateTime? _cachedSpotDate;
+
+    /// <summary>Last valid parsed strike. Used to revert StrikeText on invalid input.</summary>
+    private decimal? _lastValidStrike;
+
+    /// <summary>Last valid parsed hedge rate. Used to revert HedgeRateText on invalid input.</summary>
+    private decimal? _lastValidHedgeRate;
+
+    /// <summary>Last valid parsed option notional. Used to revert NotionalText on invalid input.</summary>
+    private decimal? _lastValidNotional;
+
+    /// <summary>Last valid parsed hedge notional. Used to revert HedgeNotionalText on invalid input.</summary>
+    private decimal? _lastValidHedgeNotional;
+
+    /// <summary>Last valid parsed premium. Used to revert PremiumText on invalid input.</summary>
+    private decimal? _lastValidPremium;
+
+    /// <summary>Number of decimal places the user entered for premium (only set when > default).</summary>
+    private int? _userPremiumDecimals;
+
+    /// <summary>Last valid parsed premium amount. Used to revert PremiumAmountText on invalid input.</summary>
+    private decimal? _lastValidPremiumAmount;
+
+    /// <summary>Number of decimal places the user entered for premium amount (only set when > 2).</summary>
+    private int? _userPremiumAmountDecimals;
+
+    /// <summary>Number of decimal places the user entered for notional (only when result has fraction).</summary>
+    private int? _userNotionalDecimals;
+
+    /// <summary>Number of decimal places the user entered for hedge notional (only when result has fraction).</summary>
+    private int? _userHedgeNotionalDecimals;
+
     public bool HasHedge => Hedge != HedgeType.No;
 
     /// <summary>True if this is the first leg — only Leg 1 can edit Counterpart/CurrencyPair.</summary>
@@ -75,6 +114,35 @@ public partial class TradeLegViewModel : ObservableObject
 
     public string BaseCurrency => CurrencyPair.Length >= 3 ? CurrencyPair[..3] : "";
     public string QuoteCurrency => CurrencyPair.Length >= 6 ? CurrencyPair[3..6] : "";
+
+    /// <summary>JPY pairs use 3 decimal places for strike; all others use 5.</summary>
+    public int StrikeDecimals => IsJpyPair ? 3 : 5;
+
+    /// <summary>
+    /// Minimum decimal places for strike and hedge rate: JPY pairs use 2, all others use 4.
+    /// If the user enters more decimals, those are preserved.
+    /// </summary>
+    public int StrikeMinDecimals => IsJpyPair ? 2 : 4;
+
+    private bool IsJpyPair =>
+        CurrencyPair.Length >= 6 &&
+        (CurrencyPair[..3] == "JPY" || CurrencyPair[3..6] == "JPY");
+
+    public bool PremiumInputEnabled => Notional.HasValue && Strike.HasValue;
+
+    private bool IsPremiumPct => PremiumStyle is PremiumStyle.PctBase or PremiumStyle.PctQuote;
+
+    /// <summary>Default minimum decimal places for premium: pips = 1, % = 3.</summary>
+    private int PremiumDefaultDecimals => IsPremiumPct ? 3 : 1;
+
+    public string PremiumStyleDisplay => PremiumStyle switch
+    {
+        PremiumStyle.PctBase => $"%{BaseCurrency}",
+        PremiumStyle.PipsQuote => $"{QuoteCurrency} pips",
+        PremiumStyle.PctQuote => $"%{QuoteCurrency}",
+        PremiumStyle.PipsBase => $"{BaseCurrency} pips",
+        _ => ""
+    };
 
     // Parsed values
     public decimal? Strike => decimal.TryParse(StrikeText, System.Globalization.NumberStyles.Any,
@@ -93,7 +161,6 @@ public partial class TradeLegViewModel : ObservableObject
 
     partial void OnCounterpartChanged(string value)
     {
-        // If this is Leg 1, propagate to all other legs
         if (IsFirstLeg)
             _parent.PropagateFromLeg1(nameof(Counterpart), value);
     }
@@ -103,18 +170,30 @@ public partial class TradeLegViewModel : ObservableObject
         if (value.Length >= 6)
         {
             NotionalCurrency = BaseCurrency;
-            PremiumCurrency = QuoteCurrency;
             HedgeNotionalCurrency = BaseCurrency;
             OnPropertyChanged(nameof(BaseCurrency));
             OnPropertyChanged(nameof(QuoteCurrency));
+            OnPropertyChanged(nameof(StrikeDecimals));
+            OnPropertyChanged(nameof(StrikeMinDecimals));
 
-            // Auto-set portfolio from DB
+            UpdatePremiumCurrencyFromStyle();
+            OnPropertyChanged(nameof(PremiumStyleDisplay));
+
             _ = LoadPortfolioAsync(value);
+
+            if (_lastValidStrike.HasValue)
+                StrikeText = FormatStrike(_lastValidStrike.Value);
+
+            // Re-format hedge rate when currency pair changes (JPY threshold may change)
+            if (_lastValidHedgeRate.HasValue)
+                HedgeRateText = FormatStrike(_lastValidHedgeRate.Value);
         }
 
-        // If this is Leg 1, propagate to all other legs
         if (IsFirstLeg)
             _parent.PropagateFromLeg1(nameof(CurrencyPair), value);
+
+        if (ExpiryDate.HasValue && !string.IsNullOrWhiteSpace(ExpiryText))
+            ApplyExpiryInput(ExpiryText);
 
         _parent.NotifyLegChanged();
     }
@@ -137,6 +216,28 @@ public partial class TradeLegViewModel : ObservableObject
         _parent.NotifyLegChanged();
     }
 
+    partial void OnStrikeTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(Strike));
+        OnPropertyChanged(nameof(PremiumInputEnabled));
+        RecalculatePremiumFromPremiumText();
+    }
+
+    partial void OnNotionalTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(Notional));
+        OnPropertyChanged(nameof(PremiumInputEnabled));
+        RecalculatePremiumFromPremiumText();
+    }
+
+    partial void OnPremiumStyleChanged(PremiumStyle value)
+    {
+        UpdatePremiumCurrencyFromStyle();
+        OnPropertyChanged(nameof(PremiumStyleDisplay));
+        _userPremiumDecimals = null;
+        RecalculatePremiumFromPremiumText();
+    }
+
     partial void OnPremiumTextChanged(string value)
     {
         if (value == "?")
@@ -144,15 +245,7 @@ public partial class TradeLegViewModel : ObservableObject
             _parent.StartSolving(this, isByAmount: false);
             return;
         }
-        if (!IsPremiumLocked && Premium.HasValue && Notional.HasValue)
-        {
-            var amount = PremiumCalculator.CalculateAmount(Premium, Notional, PremiumStyle);
-            if (amount.HasValue)
-            {
-                var signed = PremiumCalculator.ApplySign(amount.Value, BuySell);
-                SetProperty(ref _premiumAmountText, signed.ToString("N2", System.Globalization.CultureInfo.InvariantCulture), nameof(PremiumAmountText));
-            }
-        }
+        RecalculatePremiumAmountFromPremiumText();
         _parent.UpdateTotalPremium();
     }
 
@@ -163,14 +256,7 @@ public partial class TradeLegViewModel : ObservableObject
             _parent.StartSolving(this, isByAmount: true);
             return;
         }
-        if (!IsPremiumLocked && PremiumAmount.HasValue && Notional.HasValue)
-        {
-            var prem = PremiumCalculator.CalculatePremium(PremiumAmount, Notional, PremiumStyle);
-            if (prem.HasValue)
-            {
-                SetProperty(ref _premiumText, prem.Value.ToString("N4", System.Globalization.CultureInfo.InvariantCulture), nameof(PremiumText));
-            }
-        }
+        RecalculatePremiumTextFromAmount();
         _parent.UpdateTotalPremium();
     }
 
@@ -178,9 +264,9 @@ public partial class TradeLegViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasHedge));
         if (value == HedgeType.No)
-        {
             HedgeSettlementDate = null;
-        }
+        else
+            RecalculateHedgeSettlementDate();
         _parent.NotifyLegChanged();
     }
 
@@ -197,6 +283,321 @@ public partial class TradeLegViewModel : ObservableObject
         Mic = mic;
     }
 
+    // --- Premium Calculation Helpers ---
+
+    private bool _isRecalculating;
+
+    private void RecalculatePremiumAmountFromPremiumText()
+    {
+        if (_isRecalculating || IsPremiumLocked) return;
+        if (!Premium.HasValue || !Notional.HasValue) return;
+
+        var amount = PremiumCalculator.CalculateAmount(Premium, Notional, PremiumStyle, Strike);
+        if (amount.HasValue)
+        {
+            _isRecalculating = true;
+            var signed = PremiumCalculator.ApplySign(amount.Value, BuySell);
+            _lastValidPremiumAmount = signed;
+            int decimals = _userPremiumAmountDecimals ?? 2;
+            SetProperty(ref _premiumAmountText, FormatPremiumAmount(signed, decimals), nameof(PremiumAmountText));
+            _isRecalculating = false;
+        }
+    }
+
+    private void RecalculatePremiumTextFromAmount()
+    {
+        if (_isRecalculating || IsPremiumLocked) return;
+        if (!PremiumAmount.HasValue || !Notional.HasValue) return;
+
+        var prem = PremiumCalculator.CalculatePremium(PremiumAmount, Notional, PremiumStyle, Strike);
+        if (prem.HasValue)
+        {
+            _isRecalculating = true;
+            _lastValidPremium = prem.Value;
+            int decimals = _userPremiumDecimals ?? PremiumDefaultDecimals;
+            SetProperty(ref _premiumText, FormatPremium(prem.Value, decimals), nameof(PremiumText));
+            _isRecalculating = false;
+        }
+    }
+
+    private void RecalculatePremiumFromPremiumText()
+    {
+        if (_isRecalculating) return;
+        if (Premium.HasValue && Notional.HasValue)
+            RecalculatePremiumAmountFromPremiumText();
+    }
+
+    private void UpdatePremiumCurrencyFromStyle()
+    {
+        PremiumCurrency = PremiumStyle switch
+        {
+            PremiumStyle.PctBase => BaseCurrency,
+            PremiumStyle.PipsQuote => QuoteCurrency,
+            PremiumStyle.PctQuote => QuoteCurrency,
+            PremiumStyle.PipsBase => BaseCurrency,
+            _ => QuoteCurrency
+        };
+    }
+
+    // --- Strike Input Handling ---
+
+    /// <summary>
+    /// Validates and formats strike input. Comma → dot. Only numbers accepted.
+    /// Formats using StrikeMinDecimals (4 or 2 for JPY) as minimum, preserving more if user typed them.
+    /// Invalid → revert to last valid.
+    /// </summary>
+    public void ApplyStrikeInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            _lastValidStrike = null;
+            StrikeText = string.Empty;
+            return;
+        }
+
+        var normalized = input.Replace(',', '.');
+
+        if (decimal.TryParse(normalized, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            _lastValidStrike = value;
+            StrikeText = FormatStrike(value);
+        }
+        else
+        {
+            StrikeText = _lastValidStrike.HasValue ? FormatStrike(_lastValidStrike.Value) : string.Empty;
+        }
+    }
+
+    // --- Hedge Rate Input Handling ---
+
+    /// <summary>
+    /// Validates and formats hedge rate input. Same behaviour as strike:
+    /// comma → dot, only numbers accepted, uses StrikeMinDecimals as minimum,
+    /// preserves extra decimals if the user typed them, invalid → revert to last valid.
+    /// </summary>
+    public void ApplyHedgeRateInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            _lastValidHedgeRate = null;
+            HedgeRateText = string.Empty;
+            return;
+        }
+
+        var normalized = input.Replace(',', '.');
+
+        if (decimal.TryParse(normalized, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            _lastValidHedgeRate = value;
+            HedgeRateText = FormatStrike(value);
+        }
+        else
+        {
+            HedgeRateText = _lastValidHedgeRate.HasValue ? FormatStrike(_lastValidHedgeRate.Value) : string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Formats a rate value with at least StrikeMinDecimals for the current pair,
+    /// preserving any extra decimals the user entered.
+    /// </summary>
+    private string FormatStrike(decimal value)
+    {
+        var raw = value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture);
+        int dotIndex = raw.IndexOf('.');
+        int actualDecimals = dotIndex >= 0 ? raw.Length - dotIndex - 1 : 0;
+
+        int decimals = Math.Max(actualDecimals, StrikeMinDecimals);
+        return value.ToString($"F{decimals}", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    // --- Notional Input Handling ---
+
+    public void ApplyNotionalInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            _lastValidNotional = null;
+            _userNotionalDecimals = null;
+            NotionalText = string.Empty;
+            return;
+        }
+
+        var parsed = NotionalParser.Parse(input);
+        if (parsed.HasValue)
+        {
+            _lastValidNotional = parsed.Value;
+            _userNotionalDecimals = NotionalParser.CountInputDecimals(input);
+            NotionalText = NotionalParser.Format(parsed.Value, _userNotionalDecimals);
+        }
+        else
+        {
+            NotionalText = _lastValidNotional.HasValue
+                ? NotionalParser.Format(_lastValidNotional.Value, _userNotionalDecimals)
+                : string.Empty;
+        }
+    }
+
+    public void ApplyHedgeNotionalInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            _lastValidHedgeNotional = null;
+            _userHedgeNotionalDecimals = null;
+            HedgeNotionalText = string.Empty;
+            return;
+        }
+
+        var parsed = NotionalParser.Parse(input);
+        if (parsed.HasValue)
+        {
+            _lastValidHedgeNotional = parsed.Value;
+            _userHedgeNotionalDecimals = NotionalParser.CountInputDecimals(input);
+            HedgeNotionalText = NotionalParser.Format(parsed.Value, _userHedgeNotionalDecimals);
+        }
+        else
+        {
+            HedgeNotionalText = _lastValidHedgeNotional.HasValue
+                ? NotionalParser.Format(_lastValidHedgeNotional.Value, _userHedgeNotionalDecimals)
+                : string.Empty;
+        }
+    }
+
+    // --- Premium Input Handling ---
+
+    public void ApplyPremiumInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            _lastValidPremium = null;
+            _userPremiumDecimals = null;
+            PremiumText = string.Empty;
+            return;
+        }
+
+        var normalized = input.Replace(',', '.');
+
+        if (decimal.TryParse(normalized, System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            _lastValidPremium = value;
+
+            int dotIndex = normalized.IndexOf('.');
+            int userDecimals = dotIndex >= 0 ? normalized.Length - dotIndex - 1 : 0;
+            _userPremiumDecimals = userDecimals > PremiumDefaultDecimals ? userDecimals : null;
+
+            int decimals = Math.Max(userDecimals, PremiumDefaultDecimals);
+            PremiumText = FormatPremium(value, decimals);
+        }
+        else
+        {
+            if (_lastValidPremium.HasValue)
+                PremiumText = FormatPremium(_lastValidPremium.Value, _userPremiumDecimals ?? PremiumDefaultDecimals);
+            else
+                PremiumText = string.Empty;
+        }
+    }
+
+    public void ApplyPremiumAmountInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            _lastValidPremiumAmount = null;
+            _userPremiumAmountDecimals = null;
+            PremiumAmountText = string.Empty;
+            return;
+        }
+
+        var parsed = NotionalParser.Parse(input);
+        if (parsed.HasValue)
+        {
+            _lastValidPremiumAmount = parsed.Value;
+
+            var expandedDecimals = NotionalParser.CountInputDecimals(input);
+            int userDecimals = expandedDecimals ?? 0;
+            _userPremiumAmountDecimals = userDecimals > 2 ? userDecimals : null;
+
+            int decimals = Math.Max(userDecimals, 2);
+            PremiumAmountText = FormatPremiumAmount(parsed.Value, decimals);
+        }
+        else
+        {
+            if (_lastValidPremiumAmount.HasValue)
+                PremiumAmountText = FormatPremiumAmount(_lastValidPremiumAmount.Value, _userPremiumAmountDecimals ?? 2);
+            else
+                PremiumAmountText = string.Empty;
+        }
+    }
+
+    private static string FormatPremium(decimal value, int decimals)
+        => value.ToString($"F{decimals}", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string FormatPremiumAmount(decimal value, int decimals)
+        => value.ToString($"N{decimals}", System.Globalization.CultureInfo.InvariantCulture);
+
+    // --- Expiry Date Input Handling ---
+
+    public void ApplyExpiryInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return;
+
+        var convention = ExpiryDateParser.Parse(input, CurrencyPair, _parent.Holidays);
+
+        if (convention != null)
+        {
+            ExpiryDate = convention.ExpiryDate;
+            SettlementDate = convention.DeliveryDate;
+            ExpiryText = convention.ExpiryDate.ToString("yyyy-MM-dd");
+            _cachedSpotDate = convention.SpotDate;
+
+            PremiumDate = PremiumDateType == PremiumDateType.Spot
+                ? convention.SpotDate
+                : convention.DeliveryDate;
+
+            RecalculateHedgeSettlementDate();
+        }
+        else
+        {
+            ExpiryText = ExpiryDate.HasValue
+                ? ExpiryDate.Value.ToString("yyyy-MM-dd")
+                : string.Empty;
+        }
+    }
+
+    private void RecalculateHedgeSettlementDate()
+    {
+        if (Hedge == HedgeType.No)
+        {
+            HedgeSettlementDate = null;
+            return;
+        }
+
+        if (Hedge == HedgeType.Forward)
+        {
+            HedgeSettlementDate = SettlementDate;
+            return;
+        }
+
+        if (Hedge == HedgeType.Spot && CurrencyPair.Length >= 6 && _parent.Holidays.Rows.Count >= 0)
+        {
+            try
+            {
+                var dc = new DateConvention(CurrencyPair, _parent.Holidays);
+                var spotDate = dc.getForwardDate(DateTime.Today,
+                    CurrencyPair.Replace("/", "") is "USDCAD" or "USDTRY" or "USDPHP"
+                        or "USDRUB" or "USDKZT" or "USDPKR" ? 1 : 2);
+                HedgeSettlementDate = spotDate;
+            }
+            catch
+            {
+                HedgeSettlementDate = null;
+            }
+        }
+    }
+
     // --- Methods ---
 
     public void ToggleBuySell() => BuySell = BuySell == BuySell.Buy ? BuySell.Sell : BuySell.Buy;
@@ -209,18 +610,16 @@ public partial class TradeLegViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public void TogglePremiumCurrency()
+    public void TogglePremiumStyle()
     {
-        if (PremiumCurrency == QuoteCurrency)
+        PremiumStyle = PremiumStyle switch
         {
-            PremiumCurrency = BaseCurrency;
-            PremiumStyle = PremiumStyle.Percent;
-        }
-        else
-        {
-            PremiumCurrency = QuoteCurrency;
-            PremiumStyle = PremiumStyle.Pips;
-        }
+            PremiumStyle.PctBase => PremiumStyle.PipsQuote,
+            PremiumStyle.PipsQuote => PremiumStyle.PctQuote,
+            PremiumStyle.PctQuote => PremiumStyle.PipsBase,
+            PremiumStyle.PipsBase => PremiumStyle.PctBase,
+            _ => PremiumStyle.PctBase
+        };
     }
 
     [RelayCommand]
@@ -229,7 +628,29 @@ public partial class TradeLegViewModel : ObservableObject
         PremiumDateType = PremiumDateType == PremiumDateType.Spot
             ? PremiumDateType.Forward
             : PremiumDateType.Spot;
-        // Recalculate premium date based on type
+
+        if (PremiumDateType == PremiumDateType.Spot)
+        {
+            if (_cachedSpotDate.HasValue)
+            {
+                PremiumDate = _cachedSpotDate;
+            }
+            else if (CurrencyPair.Length >= 6)
+            {
+                try
+                {
+                    var dc = new DateConvention(CurrencyPair, _parent.Holidays);
+                    var tAdd = CurrencyPair.Replace("/", "") is "USDCAD" or "USDTRY" or "USDPHP"
+                        or "USDRUB" or "USDKZT" or "USDPKR" ? 1 : 2;
+                    PremiumDate = dc.getForwardDate(DateTime.Today, tAdd);
+                }
+                catch { }
+            }
+        }
+        else
+        {
+            PremiumDate = SettlementDate;
+        }
     }
 
     private void UpdateHedgeDirection()
@@ -243,7 +664,9 @@ public partial class TradeLegViewModel : ObservableObject
         {
             var abs = Math.Abs(PremiumAmount.Value);
             var signed = PremiumCalculator.ApplySign(abs, BuySell);
-            PremiumAmountText = signed.ToString("N2", System.Globalization.CultureInfo.InvariantCulture);
+            _lastValidPremiumAmount = signed;
+            int decimals = _userPremiumAmountDecimals ?? 2;
+            PremiumAmountText = FormatPremiumAmount(signed, decimals);
         }
     }
 
@@ -305,10 +728,14 @@ public partial class TradeLegViewModel : ObservableObject
         BuySell = source.BuySell;
         CallPut = source.CallPut;
         StrikeText = source.StrikeText;
+        _lastValidStrike = source._lastValidStrike;
+        ExpiryText = source.ExpiryText;
         ExpiryDate = source.ExpiryDate;
         SettlementDate = source.SettlementDate;
         Cut = source.Cut;
         NotionalText = source.NotionalText;
+        _lastValidNotional = source._lastValidNotional;
+        _userNotionalDecimals = source._userNotionalDecimals;
         NotionalCurrency = source.NotionalCurrency;
         PremiumCurrency = source.PremiumCurrency;
         PremiumStyle = source.PremiumStyle;
@@ -318,7 +745,8 @@ public partial class TradeLegViewModel : ObservableObject
         Trader = source.Trader;
         Mic = source.Mic;
         Broker = source.Broker;
-        Hedge = source.Hedge;
+        // Hedge type is NOT copied — new legs always default to HedgeType.No
+        _cachedSpotDate = source._cachedSpotDate;
         // Premium NOT copied (per legacy behavior)
     }
 }

@@ -20,7 +20,7 @@ using System.Globalization;
 
 namespace FxTradeConfirmation.Helpers
 {
-    class Convention
+    public class Convention
     {
         #region Properties
         public DateTime SpotDate { get; set; }
@@ -30,7 +30,7 @@ namespace FxTradeConfirmation.Helpers
         #endregion
     }
 
-    class DateConvention
+    public class DateConvention
     {
         #region Variables
         private string[] ctryCurrency = new string[] { "EUR", "USD", "SEK", "NOK", "GBP", "CAD", "CHF", "AUD", "RUB", "JPY" };

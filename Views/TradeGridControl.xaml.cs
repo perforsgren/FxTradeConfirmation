@@ -55,11 +55,53 @@ public partial class TradeGridControl : UserControl
     // Track distributor combos that need clearing
     private ComboBox? _distCounterpart;
     private ComboBox? _distCcyPair;
+    private ComboBox? _distCut;
 
     public TradeGridControl()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+
+        // Select-all text when any TextBox in the grid receives focus via mouse click
+        EventManager.RegisterClassHandler(typeof(TextBox), GotKeyboardFocusEvent,
+            new KeyboardFocusChangedEventHandler(OnTextBoxGotKeyboardFocus));
+        EventManager.RegisterClassHandler(typeof(TextBox), PreviewMouseLeftButtonDownEvent,
+            new MouseButtonEventHandler(OnTextBoxPreviewMouseLeftButtonDown));
+    }
+
+    /// <summary>
+    /// When a TextBox gains keyboard focus, select all text for faster user input.
+    /// </summary>
+    private static void OnTextBoxGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (e.OriginalSource is TextBox tb && !tb.IsReadOnly)
+            tb.SelectAll();
+    }
+
+    /// <summary>
+    /// When clicking a TextBox that isn't already focused, give it focus (which triggers select-all)
+    /// instead of placing the caret at the click position.
+    /// </summary>
+    private static void OnTextBoxPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+
+        var tb = FindParent<TextBox>(source);
+        if (tb == null || tb.IsReadOnly || tb.IsKeyboardFocusWithin) return;
+
+        tb.Focus();
+        e.Handled = true;
+    }
+
+    private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
+    {
+        var current = child;
+        while (current != null)
+        {
+            if (current is T found) return found;
+            current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -93,6 +135,9 @@ public partial class TradeGridControl : UserControl
             case nameof(TradeLegViewModel.CurrencyPair):
                 if (_distCcyPair != null) _distCcyPair.SelectedIndex = -1;
                 break;
+            case nameof(TradeLegViewModel.Cut):
+                if (_distCut != null) _distCut.SelectedIndex = -1;
+                break;
         }
     }
 
@@ -115,6 +160,51 @@ public partial class TradeGridControl : UserControl
 
     private static int LegValCol(int legIndex) => 3 + legIndex * 2;
     private static int LegTogCol(int legIndex) => 4 + legIndex * 2;
+
+    // ================================================================
+    //  Comma → Dot real-time replacement for numeric TextBoxes
+    // ================================================================
+
+    /// <summary>
+    /// Intercepts comma keypress and replaces it with a dot in the TextBox.
+    /// Attach via PreviewTextInput on any numeric input field.
+    /// </summary>
+    private static void ReplaceCommaWithDot(object sender, TextCompositionEventArgs e)
+    {
+        if (e.Text == ",")
+        {
+            e.Handled = true;
+            if (sender is TextBox tb)
+            {
+                int selStart = tb.SelectionStart;
+                int selLen = tb.SelectionLength;
+                string before = tb.Text[..selStart];
+                string after = tb.Text[(selStart + selLen)..];
+                tb.Text = before + "." + after;
+                tb.CaretIndex = selStart + 1;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Attaches comma→dot, LostFocus and Enter handlers to a numeric TextBox.
+    /// </summary>
+    private static void AttachNumericHandlers(TextBox tb, Action<string> applyAction)
+    {
+        tb.PreviewTextInput += ReplaceCommaWithDot;
+        tb.LostFocus += (s, _) =>
+        {
+            if (s is TextBox t) applyAction(t.Text);
+        };
+        tb.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter && s is TextBox t)
+            {
+                applyAction(t.Text);
+                Keyboard.ClearFocus();
+            }
+        };
+    }
 
     // ================================================================
     //  GRID REBUILD
@@ -301,7 +391,7 @@ public partial class TradeGridControl : UserControl
 
         // Amounts & Premium section
         AddRowLabel(RowNotional, "Notional", totalCols);
-        AddRowLabel(RowPremium, "Premium", totalCols, badgeText: "pips");
+        AddRowLabel(RowPremium, "Premium", totalCols);
         AddRowLabel(RowPremiumAmount, "Premium Amount", totalCols);
         AddRowLabel(RowPremiumDate, "Premium Date", totalCols, badgeText: "Spot");
 
@@ -324,41 +414,78 @@ public partial class TradeGridControl : UserControl
 
         AddDistToggle(RowBuySell, ColDistToggle, DistToggle_BuySell, "Flippa Buy/Sell på alla legs");
         AddDistToggle(RowCallPut, ColDistToggle, DistToggle_CallPut, "Flippa Call/Put på alla legs");
+        AddDistToggle(RowPremium, ColDistToggle, DistToggle_PremiumStyle, "Flippa Premium Style på alla legs");
         AddDistToggle(RowPremiumDate, ColDistToggle, DistToggle_PremiumDate, "Flippa Premium Date Type på alla legs");
 
         var distStrike = CreateDistTextBox();
+        distStrike.ToolTip = "Enter strike value. Comma → dot. Press Enter to apply to all legs.";
+        distStrike.PreviewTextInput += ReplaceCommaWithDot;
         distStrike.KeyDown += (s, e) =>
         {
             if (e.Key == Key.Enter && s is TextBox tb)
+            {
                 _vm?.SetAllStrikeCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
+        };
+        distStrike.LostFocus += (s, _) =>
+        {
+            if (s is TextBox tb && !string.IsNullOrWhiteSpace(tb.Text))
+            {
+                _vm?.SetAllStrikeCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
         };
         AddCell(RowStrike, ColDistInput, distStrike);
 
         var distExpiry = CreateDistTextBox();
+        distExpiry.ToolTip = "Enter tenor (on, 1d, 1w, 1m, 1y) or date (dd/MM, dd-MMM). Press Enter.";
         distExpiry.KeyDown += (s, e) =>
         {
             if (e.Key == Key.Enter && s is TextBox tb)
+            {
                 _vm?.SetAllExpiryCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
+        };
+        distExpiry.LostFocus += (s, _) =>
+        {
+            if (s is TextBox tb && !string.IsNullOrWhiteSpace(tb.Text))
+            {
+                _vm?.SetAllExpiryCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
         };
         AddCell(RowExpiry, ColDistInput, distExpiry);
 
-        var distCut = CreateDistComboBox("ReferenceData.Cuts");
-        distCut.SelectionChanged += (s, _) =>
+        _distCut = CreateDistComboBox("ReferenceData.Cuts");
+        _distCut.SelectionChanged += (s, _) =>
         {
             if (s is ComboBox cb && cb.SelectedItem is string val)
                 _vm?.SetAllCutCommand.Execute(val);
         };
-        AddCell(RowCut, ColDistInput, distCut);
+        AddCell(RowCut, ColDistInput, _distCut);
 
         var distNotional = CreateDistTextBox();
+        distNotional.ToolTip = "Enter notional (e.g. 5m, 100k, 2b). Press Enter to apply to all legs.";
+        distNotional.PreviewTextInput += ReplaceCommaWithDot;
         distNotional.KeyDown += (s, e) =>
         {
             if (e.Key == Key.Enter && s is TextBox tb)
+            {
                 _vm?.SetAllNotionalCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
+        };
+        distNotional.LostFocus += (s, _) =>
+        {
+            if (s is TextBox tb && !string.IsNullOrWhiteSpace(tb.Text))
+            {
+                _vm?.SetAllNotionalCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
         };
         AddCell(RowNotional, ColDistInput, distNotional);
-
-        AddDistToggle(RowPremiumDate, ColDistToggle, DistToggle_PremiumDate, "Toggle all Premium Date Type");
 
         // Leg columns
         for (int i = 0; i < legCount; i++)
@@ -385,22 +512,60 @@ public partial class TradeGridControl : UserControl
             // Call/Put segmented toggle
             AddCell(RowCallPut, vc, CreateCallPutToggle(leg));
 
-            AddCell(RowStrike, vc, CreateLegTextBox(leg, nameof(leg.StrikeText)));
-            AddCell(RowExpiry, vc, CreateLegTextBox(leg, nameof(leg.ExpiryDate),
-                stringFormat: "yyyy-MM-dd", trigger: UpdateSourceTrigger.LostFocus));
+            // Strike — validated/formatted on LostFocus/Enter via ApplyStrikeInput
+            var strikeTb = CreateLegTextBox(leg, nameof(leg.StrikeText),
+                trigger: UpdateSourceTrigger.PropertyChanged);
+            strikeTb.ToolTip = "Numeric only. Comma → dot. Formatted to 5 decimals (3 for JPY pairs).";
+            AttachNumericHandlers(strikeTb, leg.ApplyStrikeInput);
+            AddCell(RowStrike, vc, strikeTb);
+
+            // Expiry Date — user types tenor/date into ExpiryText, resolved on LostFocus
+            var expiryTb = CreateLegTextBox(leg, nameof(leg.ExpiryText),
+                trigger: UpdateSourceTrigger.PropertyChanged);
+            expiryTb.ToolTip = "Enter tenor (on, o/n, 1d, 1w, 1m, 1y) or date (dd/MM, dd-MMM, dd/MM/yyyy)";
+            expiryTb.LostFocus += (s, _) =>
+            {
+                if (s is TextBox tb)
+                    leg.ApplyExpiryInput(tb.Text);
+            };
+            expiryTb.KeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Enter && s is TextBox tb)
+                {
+                    leg.ApplyExpiryInput(tb.Text);
+                    Keyboard.ClearFocus();
+                }
+            };
+            AddCell(RowExpiry, vc, expiryTb);
+
+            // Settlement Date — read-only, auto-calculated
             AddCell(RowSettlement, vc, CreateLegTextBox(leg, nameof(leg.SettlementDate),
                 stringFormat: "yyyy-MM-dd", isReadOnly: true));
+
             AddCell(RowCut, vc, CreateLegComboBox(leg, nameof(leg.Cut), "ReferenceData.Cuts"));
 
-            // Notional — inline currency suffix toggle inside the textbox border
-            AddCell(RowNotional, vc, CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.NotionalText),
-                leg, nameof(leg.NotionalCurrency), () => leg.ToggleNotionalCurrencyCommand.Execute(null)));
+            // Notional — inline currency suffix toggle, validated/formatted on LostFocus/Enter
+            var notionalTb = CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.NotionalText),
+                leg, nameof(leg.NotionalCurrency), () => leg.ToggleNotionalCurrencyCommand.Execute(null));
+            notionalTb.ToolTip = "Enter notional (e.g. 5m, 100k, 2b, 1y or plain number). Comma → dot.";
+            AttachNumericHandlers(notionalTb, leg.ApplyNotionalInput);
+            AddCell(RowNotional, vc, notionalTb);
 
-            AddCell(RowPremium, vc, CreateLegTextBox(leg, nameof(leg.PremiumText)));
+            // Premium — inline style toggle suffix, disabled until notional+strike present
+            var premiumTb = CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumText),
+                leg, nameof(leg.PremiumStyleDisplay), () => leg.TogglePremiumStyleCommand.Execute(null));
+            premiumTb.SetBinding(TextBox.IsEnabledProperty,
+                new Binding(nameof(leg.PremiumInputEnabled)) { Source = leg });
+            AttachNumericHandlers(premiumTb, leg.ApplyPremiumInput);
+            AddCell(RowPremium, vc, premiumTb);
 
-            // Premium Amount — inline currency suffix toggle inside the textbox border
-            AddCell(RowPremiumAmount, vc, CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumAmountText),
-                leg, nameof(leg.PremiumCurrency), () => leg.TogglePremiumCurrencyCommand.Execute(null)));
+            // Premium Amount — inline currency suffix toggle, disabled until notional+strike present
+            var premAmtTb = CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumAmountText),
+                leg, nameof(leg.PremiumCurrency), () => leg.TogglePremiumStyleCommand.Execute(null));
+            premAmtTb.SetBinding(TextBox.IsEnabledProperty,
+                new Binding(nameof(leg.PremiumInputEnabled)) { Source = leg });
+            AttachNumericHandlers(premAmtTb, leg.ApplyPremiumAmountInput);
+            AddCell(RowPremiumAmount, vc, premAmtTb);
 
             // Premium Date — inline type badge suffix
             AddCell(RowPremiumDate, vc, CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumDate),
@@ -453,11 +618,48 @@ public partial class TradeGridControl : UserControl
 
         AddDistToggle(RowHedgeBuySell, ColDistToggle, DistToggle_HedgeBuySell, "Flippa Hedge Buy/Sell på alla legs");
 
+        // Distributor for hedge notional — clears after input
+        var distHedgeNotional = CreateDistTextBox();
+        distHedgeNotional.ToolTip = "Enter hedge notional (e.g. 5m, 100k, 2b). Press Enter to apply to all legs.";
+        distHedgeNotional.PreviewTextInput += ReplaceCommaWithDot;
+        distHedgeNotional.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter && s is TextBox tb)
+            {
+                _vm?.SetAllHedgeNotionalCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
+        };
+        distHedgeNotional.LostFocus += (s, _) =>
+        {
+            if (s is TextBox tb && !string.IsNullOrWhiteSpace(tb.Text))
+            {
+                _vm?.SetAllHedgeNotionalCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
+        };
+        AddCell(RowHedgeNotional, ColDistInput, distHedgeNotional);
+
+        // Distributor for hedge rate — same behaviour as Strike distributor:
+        // validate input, format, populate all legs, then clear.
         var distHedgeRate = CreateDistTextBox();
+        distHedgeRate.ToolTip = "Enter hedge rate. Comma → dot. Press Enter to apply to all legs.";
+        distHedgeRate.PreviewTextInput += ReplaceCommaWithDot;
         distHedgeRate.KeyDown += (s, e) =>
         {
             if (e.Key == Key.Enter && s is TextBox tb)
+            {
                 _vm?.SetAllHedgeRateCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
+        };
+        distHedgeRate.LostFocus += (s, _) =>
+        {
+            if (s is TextBox tb && !string.IsNullOrWhiteSpace(tb.Text))
+            {
+                _vm?.SetAllHedgeRateCommand.Execute(tb.Text);
+                tb.Text = string.Empty;
+            }
         };
         AddCell(RowHedgeRate, ColDistInput, distHedgeRate);
 
@@ -468,16 +670,14 @@ public partial class TradeGridControl : UserControl
 
             var legHedgeElements = new List<UIElement>();
 
-            // Hedge type combo — always visible
+            // Hedge type combo — uses enum values directly so binding survives grid rebuilds
             var hedgeCombo = new ComboBox
             {
                 Style = FindStyle("TradingComboBox"),
                 IsEditable = false,
+                ItemsSource = Enum.GetValues<HedgeType>(),
                 Margin = new Thickness(2, 1, 2, 1)
             };
-            hedgeCombo.Items.Add("No");
-            hedgeCombo.Items.Add("Spot");
-            hedgeCombo.Items.Add("Forward");
             hedgeCombo.SetBinding(ComboBox.SelectedItemProperty,
                 new Binding(nameof(leg.Hedge))
                 {
@@ -491,22 +691,27 @@ public partial class TradeGridControl : UserControl
             AddCell(RowHedgeBuySell, vc, hBuySellToggle);
             legHedgeElements.Add(hBuySellToggle);
 
-            // Hedge Notional — with inline currency suffix toggle
+            // Hedge Notional — with inline currency suffix toggle, validated/formatted on LostFocus/Enter
             var hNotional = CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.HedgeNotionalText),
                 leg, nameof(leg.HedgeNotionalCurrency), () =>
                 {
                     leg.HedgeNotionalCurrency = leg.HedgeNotionalCurrency == leg.BaseCurrency
                         ? leg.QuoteCurrency : leg.BaseCurrency;
                 });
+            hNotional.ToolTip = "Enter hedge notional (e.g. 5m, 100k, 2b, 1y or plain number). Comma → dot.";
+            AttachNumericHandlers(hNotional, leg.ApplyHedgeNotionalInput);
             AddCell(RowHedgeNotional, vc, hNotional);
             legHedgeElements.Add(hNotional);
 
-            // Hedge Rate
-            var hRate = CreateLegTextBox(leg, nameof(leg.HedgeRateText));
+            // Hedge Rate — same behaviour as Strike: comma→dot, revert on invalid, formatted decimals
+            var hRate = CreateLegTextBox(leg, nameof(leg.HedgeRateText),
+                trigger: UpdateSourceTrigger.PropertyChanged);
+            hRate.ToolTip = "Numeric only. Comma → dot. Same formatting as Strike.";
+            AttachNumericHandlers(hRate, leg.ApplyHedgeRateInput);
             AddCell(RowHedgeRate, vc, hRate);
             legHedgeElements.Add(hRate);
 
-            // Hedge Settlement Date
+            // Hedge Settlement Date — read-only, auto-calculated
             var hSettlement = CreateLegTextBox(leg, nameof(leg.HedgeSettlementDate),
                 stringFormat: "yyyy-MM-dd", isReadOnly: true);
             AddCell(RowHedgeSettlement, vc, hSettlement);
@@ -703,6 +908,13 @@ public partial class TradeGridControl : UserControl
             leg.CallPut = leg.CallPut == CallPut.Call ? CallPut.Put : CallPut.Call;
     }
 
+    private void DistToggle_PremiumStyle(object sender, RoutedEventArgs e)
+    {
+        if (_vm == null) return;
+        foreach (var leg in _vm.Legs)
+            leg.TogglePremiumStyleCommand.Execute(null);
+    }
+
     private void DistToggle_PremiumDate(object sender, RoutedEventArgs e)
     {
         foreach (var leg in _vm!.Legs)
@@ -860,7 +1072,6 @@ public partial class TradeGridControl : UserControl
     /// <summary>
     /// Creates a TextBox with an inline suffix toggle button rendered *inside* the textbox border.
     /// The suffix button shows bound text (e.g. currency code) and triggers an action on click.
-    /// This replaces the old DockPanel approach that had the toggle outside the border.
     /// </summary>
     private TextBox CreateLegTextBoxWithInlineSuffix(TradeLegViewModel leg, string textPath,
         TradeLegViewModel suffixSource, string suffixPath, Action onToggle,

@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using System.Data.SqlClient;
 using System.Diagnostics;
 using FxTradeConfirmation.Models;
 using MySql.Data.MySqlClient;
@@ -96,6 +97,42 @@ public class DatabaseService : IDatabaseService
         }
 
         return data;
+    }
+
+    public async Task<DataTable> LoadHolidaysAsync()
+    {
+        var dt = new DataTable();
+        dt.Columns.Add("Market", typeof(string));
+        dt.Columns.Add("HolidayDate", typeof(DateTime));
+
+        try
+        {
+            // Holidays are on the SQL Server (AHS) database, same as the legacy HolidayDAO
+            var sqlConnStr = "Data Source=AHSKvant-prod-db;Initial Catalog=AHS;Integrated Security=True;Connect Timeout=15;";
+            using var conn = new SqlConnection(sqlConnStr);
+            await conn.OpenAsync();
+
+            var sql = $"SELECT MARKET, HOLIDAY_DATE FROM Holiday WHERE HOLIDAY_DATE >= '{DateTime.Now:yyyy-MM-dd}' AND HOLIDAY_DATE <= '{DateTime.Now.AddYears(7):yyyy-MM-dd}'";
+            using var cmd = new SqlCommand(sql, conn);
+            cmd.CommandTimeout = 15;
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var row = dt.NewRow();
+                row["Market"] = reader.GetString(0);
+                row["HolidayDate"] = reader.GetDateTime(1);
+                dt.Rows.Add(row);
+            }
+
+            Debug.WriteLine($"[DatabaseService] Holidays loaded: {dt.Rows.Count} rows.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DatabaseService] LoadHolidays FAILED: {ex.Message}");
+        }
+
+        return dt;
     }
 
     public async Task<string> GetPortfolioForCurrencyPairAsync(string currencyPair)

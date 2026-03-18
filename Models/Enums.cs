@@ -19,10 +19,19 @@ public enum HedgeType
     Forward
 }
 
+/// <summary>
+/// Defines how premium is quoted.
+/// PctBase   = % of base currency notional   (premium amount in base ccy)
+/// PipsQuote = pips in quote (price) currency (premium amount in quote ccy)
+/// PctQuote  = % of quote currency notional   (premium amount in quote ccy)
+/// PipsBase  = pips in base currency          (premium amount in base ccy)
+/// </summary>
 public enum PremiumStyle
 {
-    Pips,
-    Percent
+    PctBase,
+    PipsQuote,
+    PctQuote,
+    PipsBase
 }
 
 public enum PremiumDateType

@@ -6,30 +6,58 @@ public static class PremiumCalculator
 {
     /// <summary>
     /// Calculate PremiumAmount from Premium (pips/pct) and Notional.
+    /// Strike is needed for cross-currency pips calculations.
     /// </summary>
-    public static decimal? CalculateAmount(decimal? premium, decimal? notional, PremiumStyle style)
+    public static decimal? CalculateAmount(decimal? premium, decimal? notional, PremiumStyle style, decimal? strike = null)
     {
         if (!premium.HasValue || !notional.HasValue || notional.Value == 0) return null;
 
         return style switch
         {
-            PremiumStyle.Pips => premium.Value * notional.Value / 10000m,
-            PremiumStyle.Percent => premium.Value * notional.Value / 100m,
+            // % of base ccy notional → amount = premium% * notional
+            PremiumStyle.PctBase => premium.Value * notional.Value / 100m,
+
+            // Quote-ccy pips → amount = premium * notional / 10 000
+            PremiumStyle.PipsQuote => premium.Value * notional.Value / 10_000m,
+
+            // % of quote ccy notional → need strike to convert notional to quote ccy
+            // quote notional = notional * strike, amount = premium% * quote notional
+            PremiumStyle.PctQuote => strike.HasValue && strike.Value != 0
+                ? premium.Value * notional.Value * strike.Value / 100m
+                : null,
+
+            // Base-ccy pips → amount = premium * notional / 10 000
+            // (pips in base ccy: divide by strike to convert from quote pips equivalent)
+            PremiumStyle.PipsBase => strike.HasValue && strike.Value != 0
+                ? premium.Value * notional.Value / 10_000m / strike.Value
+                : null,
+
             _ => null
         };
     }
 
     /// <summary>
     /// Calculate Premium (pips/pct) from PremiumAmount and Notional.
+    /// Strike is needed for cross-currency pips calculations.
     /// </summary>
-    public static decimal? CalculatePremium(decimal? premiumAmount, decimal? notional, PremiumStyle style)
+    public static decimal? CalculatePremium(decimal? premiumAmount, decimal? notional, PremiumStyle style, decimal? strike = null)
     {
         if (!premiumAmount.HasValue || !notional.HasValue || notional.Value == 0) return null;
 
         return style switch
         {
-            PremiumStyle.Pips => premiumAmount.Value / notional.Value * 10000m,
-            PremiumStyle.Percent => premiumAmount.Value / notional.Value * 100m,
+            PremiumStyle.PctBase => premiumAmount.Value / notional.Value * 100m,
+
+            PremiumStyle.PipsQuote => premiumAmount.Value / notional.Value * 10_000m,
+
+            PremiumStyle.PctQuote => strike.HasValue && strike.Value != 0
+                ? premiumAmount.Value / (notional.Value * strike.Value) * 100m
+                : null,
+
+            PremiumStyle.PipsBase => strike.HasValue && strike.Value != 0
+                ? premiumAmount.Value * strike.Value / notional.Value * 10_000m
+                : null,
+
             _ => null
         };
     }
