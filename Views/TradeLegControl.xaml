@@ -257,8 +257,11 @@
                           Margin="0,0,0,6"/>
 
                 <TextBlock Text="EXECUTION TIME" Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource TradingTextBox}" IsReadOnly="True"
-                         Text="{Binding ExecutionTime, Mode=OneWay}" Margin="0,0,0,6"/>
+                <TextBox Style="{StaticResource TradingTextBox}"
+                         Text="{Binding ExecutionTime, UpdateSourceTrigger=PropertyChanged}"
+                         LostFocus="ExecutionTimeBox_LostFocus"
+                         KeyDown="ExecutionTimeBox_KeyDown"
+                         Margin="0,0,0,6"/>
 
                 <TextBlock Text="MIC" Style="{StaticResource FieldLabel}"/>
                 <ComboBox Style="{StaticResource TradingComboBox}"
@@ -276,13 +279,18 @@
                          Text="{Binding Isin, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
 
                 <TextBlock Text="SALES" Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource TradingTextBox}"
-                         Text="{Binding Sales, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,6"/>
+                <ComboBox Style="{StaticResource TradingComboBox}"
+                          Text="{Binding Sales, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.ReferenceData.SalesNames,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          Margin="0,0,0,6"/>
 
                 <TextBlock Text="INV DECISION ID" Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource TradingTextBox}"
-                         Text="{Binding InvestmentDecisionID, UpdateSourceTrigger=PropertyChanged}"
-                         Margin="0,0,0,6"/>
+                <ComboBox Style="{StaticResource TradingComboBox}"
+                          Text="{Binding InvestmentDecisionID, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.ReferenceData.InvestmentDecisionIDs,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          Margin="0,0,0,6"/>
 
                 <TextBlock Text="BROKER" Style="{StaticResource FieldLabel}"/>
                 <ComboBox Style="{StaticResource TradingComboBox}"
@@ -300,9 +308,12 @@
                          Margin="0,0,0,6"/>
 
                 <TextBlock Text="REPORTING ENTITY" Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource TradingTextBox}"
-                         Text="{Binding ReportingEntity, UpdateSourceTrigger=PropertyChanged}"
-                         Margin="0,0,0,6"/>
+                <ComboBox Style="{StaticResource TradingComboBox}"
+                          Text="{Binding ReportingEntity, UpdateSourceTrigger=PropertyChanged}"
+                          ItemsSource="{Binding DataContext.ReferenceData.ReportingEntities,
+                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                          Margin="0,0,0,6"/>
+                
             </StackPanel>
 
             <!-- === HEDGE SECTION === -->

@@ -68,7 +68,27 @@ public class DatabaseService : IDatabaseService
             data.EmailAddresses = await QueryListAsync(conn, "SELECT emailaddress FROM emailaddresses");
             data.SalesNames = await QueryListAsync(conn, "SELECT DISTINCT FullName FROM userprofile WHERE FullName IS NOT NULL AND IsActive = 1 ORDER BY FullName");
             data.ReportingEntities = await QueryListAsync(conn, "SELECT DISTINCT ReportingEntityId FROM userprofile WHERE ReportingEntityId IS NOT NULL AND IsActive = 1");
-            data.InvestmentDecisionIDs = await QueryListAsync(conn, "SELECT DISTINCT Mx3Id FROM userprofile WHERE Mx3Id IS NOT NULL AND IsActive = 1");
+            data.InvestmentDecisionIDs = await QueryListAsync(conn, "SELECT DISTINCT UserId FROM userprofile WHERE UserId IS NOT NULL AND IsActive = 1 ORDER BY UserId");
+
+            // Load user profile lookup maps: UserId ↔ FullName, UserId → ReportingEntityId, UserId → Mx3Id
+            await using var profileCmd = new MySqlCommand(
+                "SELECT UserId, FullName, ReportingEntityId, Mx3Id FROM userprofile WHERE IsActive = 1 AND UserId IS NOT NULL AND FullName IS NOT NULL", conn);
+            await using var profileReader = await profileCmd.ExecuteReaderAsync();
+            while (await profileReader.ReadAsync())
+            {
+                var userId = profileReader.GetString(0);
+                var fullName = profileReader.GetString(1);
+                var reportingEntity = profileReader.IsDBNull(2) ? string.Empty : profileReader.GetString(2);
+                var mx3Id = profileReader.IsDBNull(3) ? string.Empty : profileReader.GetString(3);
+
+                // UserId is unique — safe to TryAdd
+                data.UserIdToFullName.TryAdd(userId, fullName);
+                data.UserIdToReportingEntity.TryAdd(userId, reportingEntity);
+                data.UserIdToMx3Id.TryAdd(userId, mx3Id);
+                // FullName may not be unique — first match wins for reverse lookup
+                data.FullNameToUserId.TryAdd(fullName, userId);
+            }
+            await profileReader.CloseAsync();
 
             await using var cmd = new MySqlCommand(
                 "SELECT CurrencyPair, PortfolioCode FROM ccypairportfoliorule WHERE IsActive = 1", conn);

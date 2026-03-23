@@ -740,8 +740,22 @@ public partial class TradeGridControl : UserControl
             AddCell(RowTrader, vc, traderCombo);
             legAdminElements.Add(traderCombo);
 
-            // Execution Time — read-only, auto-set on save/send
-            var execTimeTb = CreateLegTextBox(leg, nameof(leg.ExecutionTime), isReadOnly: true);
+            // Execution Time — editable, validated on LostFocus/Enter (NOT PropertyChanged)
+            var execTimeTb = CreateLegTextBox(leg, nameof(leg.ExecutionTime),
+                trigger: UpdateSourceTrigger.LostFocus);
+            execTimeTb.ToolTip = $"Format: {TradeLegViewModel.ExecutionTimeFormat} (UTC)";
+            execTimeTb.LostFocus += (s, _) =>
+            {
+                if (s is TextBox tb) leg.ApplyExecutionTimeInput(tb.Text);
+            };
+            execTimeTb.KeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Enter && s is TextBox tb)
+                {
+                    leg.ApplyExecutionTimeInput(tb.Text);
+                    Keyboard.ClearFocus();
+                }
+            };
             AddCell(RowExecutionTime, vc, execTimeTb);
             legAdminElements.Add(execTimeTb);
 
@@ -760,15 +774,15 @@ public partial class TradeGridControl : UserControl
             AddCell(RowIsin, vc, isinTb);
             legAdminElements.Add(isinTb);
 
-            // Sales
-            var salesTb = CreateLegTextBox(leg, nameof(leg.Sales));
-            AddCell(RowSales, vc, salesTb);
-            legAdminElements.Add(salesTb);
+            // Sales — combo from reference data, linked to Investment Decision ID
+            var salesCombo = CreateLegComboBox(leg, nameof(leg.Sales), "ReferenceData.SalesNames");
+            AddCell(RowSales, vc, salesCombo);
+            legAdminElements.Add(salesCombo);
 
-            // Investment Decision ID
-            var invDecIdTb = CreateLegTextBox(leg, nameof(leg.InvestmentDecisionID));
-            AddCell(RowInvDecId, vc, invDecIdTb);
-            legAdminElements.Add(invDecIdTb);
+            // Investment Decision ID — combo from reference data, linked to Sales
+            var invDecIdCombo = CreateLegComboBox(leg, nameof(leg.InvestmentDecisionID), "ReferenceData.InvestmentDecisionIDs");
+            AddCell(RowInvDecId, vc, invDecIdCombo);
+            legAdminElements.Add(invDecIdCombo);
 
             // Broker — combo from reference data
             var brokerCombo = CreateLegComboBox(leg, nameof(leg.Broker), "ReferenceData.Brokers");
@@ -783,10 +797,10 @@ public partial class TradeGridControl : UserControl
             AddCell(RowMargin, vc, marginTb);
             legAdminElements.Add(marginTb);
 
-            // Reporting Entity
-            var reportingTb = CreateLegTextBox(leg, nameof(leg.ReportingEntity));
-            AddCell(RowReportingEntity, vc, reportingTb);
-            legAdminElements.Add(reportingTb);
+            // Reporting Entity — combo with fixed list
+            var reportingCombo = CreateLegComboBox(leg, nameof(leg.ReportingEntity), "ReferenceData.ReportingEntities");
+            AddCell(RowReportingEntity, vc, reportingCombo);
+            legAdminElements.Add(reportingCombo);
 
             _adminElements.Add(legAdminElements);
         }

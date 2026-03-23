@@ -126,20 +126,35 @@ public partial class MainViewModel : ObservableObject
 
     private async Task SetupUserDefaults()
     {
-        var username = Environment.UserName;
-        var sales = await DatabaseService.GetSalesNameAsync(username);
-        var reporting = await DatabaseService.GetReportingEntityAsync(sales);
-        var invDecId = await DatabaseService.GetInvestmentDecisionIdAsync(username);
-
+        // Wait for reference data lookup maps to be ready before triggering cross-updates.
+        // The InvestmentDecisionID default (Environment.UserName) was set at construction,
+        // but the lookup maps weren't loaded yet. Re-trigger now.
         Application.Current.Dispatcher.Invoke(() =>
         {
+            var currentUser = Environment.UserName.ToUpperInvariant();
+
+            // Resolve Trader from DB: Environment.UserName → userprofile.Mx3Id
+            string? resolvedTrader = null;
+            if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
+                && !string.IsNullOrEmpty(mx3Id))
+            {
+                resolvedTrader = mx3Id;
+            }
+
             foreach (var leg in Legs)
             {
-                leg.Sales = sales;
-                leg.ReportingEntity = reporting;
-                leg.InvestmentDecisionID = invDecId;
+                // Set Trader from DB lookup (falls back to Environment.UserName if not found)
+                if (resolvedTrader != null)
+                    leg.Trader = resolvedTrader;
+
+                // Re-assign to trigger OnInvestmentDecisionIDChanged which sets Sales + ReportingEntity
+                var currentId = leg.InvestmentDecisionID;
+                leg.InvestmentDecisionID = string.Empty;
+                leg.InvestmentDecisionID = currentId;
             }
         });
+
+        await Task.CompletedTask;
     }
 
     // --- Commands ---

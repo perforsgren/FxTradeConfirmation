@@ -16,8 +16,30 @@ public class ReferenceData
     public List<string> Portfolios { get; set; } = ["EMERG", "EUR", "EURNOK", "EURSEK", "FXSPOT_1", "FXSPOT_2", "FXSPOT_3", "FXSPOT_4", "FXSPOT_5", "FXSPOT_6", "JPY", "MAJORS", "PROP1", "PROP2", "PROP3", "PROP4", "USD"];
     public List<string> InvestmentDecisionIDs { get; set; } = [];
     public List<string> SalesNames { get; set; } = [];
-    public List<string> ReportingEntities { get; set; } = [];
+    public List<string> ReportingEntities { get; set; } =
+    [
+        "CORPORATE SALES FINLAND",
+        "CORPORATE SALES GOTHENBURG",
+        "CORPORATE SALES MALMO",
+        "CORPORATE SALES NORWAY",
+        "CORPORATE SALES STOCKHOLM",
+        "FX INSTITUTIONAL CLIENTS",
+        "FX VOLATILITY",
+    ];
 
     // Currency pair → Portfolio mapping
     public Dictionary<string, string> CurrencyToPortfolio { get; set; } = [];
+
+    // User profile lookups (case-insensitive)
+    /// <summary>userprofile.UserId → userprofile.FullName</summary>
+    public Dictionary<string, string> UserIdToFullName { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>userprofile.FullName → userprofile.UserId</summary>
+    public Dictionary<string, string> FullNameToUserId { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>userprofile.UserId → userprofile.ReportingEntityId</summary>
+    public Dictionary<string, string> UserIdToReportingEntity { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>userprofile.UserId → userprofile.Mx3Id (used to resolve Trader from Windows login)</summary>
+    public Dictionary<string, string> UserIdToMx3Id { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

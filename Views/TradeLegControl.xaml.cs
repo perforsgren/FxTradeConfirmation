@@ -101,6 +101,16 @@ public partial class TradeLegControl : UserControl
         if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyMarginInput(tb.Text); Keyboard.ClearFocus(); }
     }
 
+    // --- Execution Time ---
+    private void ExecutionTimeBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb) VM?.ApplyExecutionTimeInput(tb.Text);
+    }
+    private void ExecutionTimeBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyExecutionTimeInput(tb.Text); Keyboard.ClearFocus(); }
+    }
+
     // --- Hedge Notional ---
     private void HedgeNotionalBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         => ReplaceCommaWithDot(sender, e);

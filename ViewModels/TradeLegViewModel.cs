@@ -12,10 +12,16 @@ public partial class TradeLegViewModel : ObservableObject
 {
     private readonly MainViewModel _parent;
 
+    /// <summary>Expected format for ExecutionTime: yyyyMMdd HH:mm:ss.fff (UTC).</summary>
+    public const string ExecutionTimeFormat = "yyyyMMdd HH:mm:ss.fff";
+
     public TradeLegViewModel(MainViewModel parent, int legNumber)
     {
         _parent = parent;
         LegNumber = legNumber;
+        var now = DateTime.UtcNow.ToString(ExecutionTimeFormat);
+        _executionTime = now;
+        _lastValidExecutionTime = now;
     }
 
     [ObservableProperty] private int _legNumber;
@@ -39,12 +45,12 @@ public partial class TradeLegViewModel : ObservableObject
     [ObservableProperty] private PremiumDateType _premiumDateType = PremiumDateType.Spot;
     [ObservableProperty] private string _portfolioMX3 = string.Empty;
     [ObservableProperty] private string _trader = Environment.UserName.ToUpper();
-    [ObservableProperty] private string _executionTime = string.Empty;
+    [ObservableProperty] private string _executionTime;
     [ObservableProperty] private string _mic = "XOFF";
     [ObservableProperty] private string _tvtic = string.Empty;
     [ObservableProperty] private string _isin = string.Empty;
     [ObservableProperty] private string _sales = string.Empty;
-    [ObservableProperty] private string _investmentDecisionID = string.Empty;
+    [ObservableProperty] private string _investmentDecisionID = Environment.UserName.ToUpper();
     [ObservableProperty] private string _broker = string.Empty;
     [ObservableProperty] private string _marginText = string.Empty;
     [ObservableProperty] private string _reportingEntity = string.Empty;
@@ -115,6 +121,9 @@ public partial class TradeLegViewModel : ObservableObject
 
     /// <summary>Last valid parsed margin. Used to revert MarginText on invalid input.</summary>
     private decimal? _lastValidMargin;
+
+    /// <summary>Last valid ExecutionTime string. Used to revert on invalid input.</summary>
+    private string _lastValidExecutionTime;
 
     /// <summary>
     /// Snapshot of PremiumText taken just before "?" triggers solving.
@@ -222,6 +231,11 @@ public partial class TradeLegViewModel : ObservableObject
             // Re-format hedge rate when currency pair changes (JPY threshold may change)
             if (_lastValidHedgeRate.HasValue)
                 HedgeRateText = FormatStrike(_lastValidHedgeRate.Value);
+
+            // Refresh ExecutionTime when currency pair changes
+            var newTime = DateTime.UtcNow.ToString(ExecutionTimeFormat);
+            _lastValidExecutionTime = newTime;
+            ExecutionTime = newTime;
         }
 
         if (IsFirstLeg)
@@ -289,7 +303,6 @@ public partial class TradeLegViewModel : ObservableObject
     {
         if (newValue == "?")
         {
-            // Save the text that was in the cell right before the user typed "?"
             _preSolvePremiumText = oldValue ?? string.Empty;
             _parent.StartSolving(this, isByAmount: false);
             return;
@@ -302,7 +315,6 @@ public partial class TradeLegViewModel : ObservableObject
     {
         if (newValue == "?")
         {
-            // Save the text that was in the cell right before the user typed "?"
             _preSolvePremiumAmountText = oldValue ?? string.Empty;
             _parent.StartSolving(this, isByAmount: true);
             return;
@@ -334,9 +346,46 @@ public partial class TradeLegViewModel : ObservableObject
         Mic = mic;
     }
 
+    partial void OnSalesChanged(string value)
+    {
+        if (_isSyncingUserProfile) return;
+        _isSyncingUserProfile = true;
+
+        var refData = _parent.ReferenceData;
+        if (!string.IsNullOrEmpty(value) && refData.FullNameToUserId.TryGetValue(value, out var userId))
+        {
+            InvestmentDecisionID = userId;
+
+            if (refData.UserIdToReportingEntity.TryGetValue(userId, out var reporting))
+                ReportingEntity = reporting;
+        }
+
+        _isSyncingUserProfile = false;
+    }
+
+    partial void OnInvestmentDecisionIDChanged(string value)
+    {
+        if (_isSyncingUserProfile) return;
+        _isSyncingUserProfile = true;
+
+        var refData = _parent.ReferenceData;
+        if (!string.IsNullOrEmpty(value) && refData.UserIdToFullName.TryGetValue(value, out var fullName))
+        {
+            Sales = fullName;
+
+            if (refData.UserIdToReportingEntity.TryGetValue(value, out var reporting))
+                ReportingEntity = reporting;
+        }
+
+        _isSyncingUserProfile = false;
+    }
+
     // --- Premium Calculation Helpers ---
 
     private bool _isRecalculating;
+
+    /// <summary>Guard to prevent recursive Sales ↔ InvestmentDecisionID updates.</summary>
+    private bool _isSyncingUserProfile;
 
     private void RecalculatePremiumAmountFromPremiumText()
     {
@@ -503,11 +552,6 @@ public partial class TradeLegViewModel : ObservableObject
 
     // --- Margin Input Handling ---
 
-    /// <summary>
-    /// Parses and formats margin input. Accepts k/K (thousands) and m/M (millions).
-    /// Invalid input reverts to the last valid value or clears the field.
-    /// Display uses comma as thousands separator and always 2 decimal places.
-    /// </summary>
     public void ApplyMarginInput(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -525,10 +569,42 @@ public partial class TradeLegViewModel : ObservableObject
         }
         else
         {
-            // Invalid input — revert to last valid value or clear
             MarginText = _lastValidMargin.HasValue
                 ? MarginParser.Format(_lastValidMargin.Value)
                 : string.Empty;
+        }
+    }
+
+    // --- Execution Time Input Handling ---
+
+    /// <summary>
+    /// Validates and applies user-edited ExecutionTime text.
+    /// Expected format: yyyyMMdd HH:mm:ss.fff (UTC).
+    /// Invalid input reverts to the last valid value.
+    /// </summary>
+    public void ApplyExecutionTimeInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            var now = DateTime.UtcNow.ToString(ExecutionTimeFormat);
+            _lastValidExecutionTime = now;
+            ExecutionTime = now;
+            return;
+        }
+
+        if (DateTime.TryParseExact(input.Trim(),
+                ExecutionTimeFormat,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None,
+                out _))
+        {
+            _lastValidExecutionTime = input.Trim();
+            ExecutionTime = input.Trim();
+        }
+        else
+        {
+            // Invalid format — revert TextBox to last valid value
+            ExecutionTime = _lastValidExecutionTime;
         }
     }
 
@@ -667,10 +743,6 @@ public partial class TradeLegViewModel : ObservableObject
 
     // --- Solving helpers ---
 
-    /// <summary>
-    /// Clears the field being solved and marks the corresponding cell as readonly.
-    /// Snapshots are taken in OnPremiumTextChanged/OnPremiumAmountTextChanged before this runs.
-    /// </summary>
     public void ClearSolvingField(bool isByAmount)
     {
         _isRecalculating = true;
@@ -696,11 +768,6 @@ public partial class TradeLegViewModel : ObservableObject
         _isRecalculating = false;
     }
 
-    /// <summary>
-    /// Writes back the premium text that was in the cell before "?" was typed.
-    /// Uses the public property setter so the full recalculation chain runs
-    /// and the WPF TextBox is forced to update regardless of focus state.
-    /// </summary>
     public void RestorePreSolveValues()
     {
         if (_preSolvePremiumText != null)
@@ -716,9 +783,6 @@ public partial class TradeLegViewModel : ObservableObject
         }
     }
 
-    /// <summary>
-    /// Resets all solving-related readonly flags on this leg.
-    /// </summary>
     public void ClearSolvingFlags()
     {
         IsSolvingTarget = false;
@@ -757,15 +821,9 @@ public partial class TradeLegViewModel : ObservableObject
     public void TogglePremiumCurrency()
     {
         if (PremiumCurrency == BaseCurrency)
-        {
-            // Switch to quote currency — use PipsQuote as default quote style
             _parent.SetAllPremiumStyle(PremiumStyle.PipsQuote);
-        }
         else
-        {
-            // Switch to base currency — use PctBase
             _parent.SetAllPremiumStyle(PremiumStyle.PctBase);
-        }
     }
 
     [RelayCommand]
@@ -822,10 +880,6 @@ public partial class TradeLegViewModel : ObservableObject
         PortfolioMX3 = portfolio ?? string.Empty;
     }
 
-    /// <summary>
-    /// Triggers a portfolio lookup for the current CurrencyPair.
-    /// Called after construction since the field initializer doesn't fire OnCurrencyPairChanged.
-    /// </summary>
     public async Task LoadPortfolioForCurrentPairAsync()
     {
         if (CurrencyPair.Length >= 6)
@@ -854,7 +908,7 @@ public partial class TradeLegViewModel : ObservableObject
             PremiumDateType = PremiumDateType,
             PortfolioMX3 = PortfolioMX3,
             Trader = Trader,
-            ExecutionTime = DateTime.UtcNow.ToString("yyyyMMdd HH:mm:ss:fff"),
+            ExecutionTime = ExecutionTime,
             MIC = Mic,
             TVTIC = Tvtic,
             ISIN = Isin,
