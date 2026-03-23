@@ -100,6 +100,12 @@ public partial class MainViewModel : ObservableObject
             Application.Current.Dispatcher.Invoke(() => ReferenceData = data);
 
             await SetupUserDefaults();
+
+            // Load portfolio for the default currency pair on all legs.
+            // This must happen AFTER the DB connection is established,
+            // because AddLegInternal runs before InitializeAsync completes.
+            foreach (var leg in Legs)
+                await leg.LoadPortfolioForCurrentPairAsync();
         }
 
         // Load holiday calendar (from AHS SQL Server, independent of MySQL connection)
@@ -491,6 +497,10 @@ public partial class MainViewModel : ObservableObject
         }
 
         Legs.Add(leg);
+
+        // Trigger portfolio lookup for the default currency pair
+        // (OnCurrencyPairChanged doesn't fire for the initial field value)
+        _ = leg.LoadPortfolioForCurrentPairAsync();
     }
 
     private void RenumberLegs()

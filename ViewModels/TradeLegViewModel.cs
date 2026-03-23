@@ -113,6 +113,9 @@ public partial class TradeLegViewModel : ObservableObject
     /// <summary>Number of decimal places the user entered for hedge notional (only when result has fraction).</summary>
     private int? _userHedgeNotionalDecimals;
 
+    /// <summary>Last valid parsed margin. Used to revert MarginText on invalid input.</summary>
+    private decimal? _lastValidMargin;
+
     /// <summary>
     /// Snapshot of PremiumText taken just before "?" triggers solving.
     /// Restored when the user cancels the solve dialog.
@@ -187,7 +190,7 @@ public partial class TradeLegViewModel : ObservableObject
     public decimal? HedgeNotional => NotionalParser.Parse(HedgeNotionalText);
     public decimal? HedgeRate => decimal.TryParse(HedgeRateText, System.Globalization.NumberStyles.Any,
         System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
-    public decimal? Margin => NotionalParser.Parse(MarginText);
+    public decimal? Margin => MarginParser.Parse(MarginText);
 
     // --- Reactions to property changes ---
 
@@ -498,6 +501,37 @@ public partial class TradeLegViewModel : ObservableObject
         }
     }
 
+    // --- Margin Input Handling ---
+
+    /// <summary>
+    /// Parses and formats margin input. Accepts k/K (thousands) and m/M (millions).
+    /// Invalid input reverts to the last valid value or clears the field.
+    /// Display uses comma as thousands separator and always 2 decimal places.
+    /// </summary>
+    public void ApplyMarginInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            _lastValidMargin = null;
+            MarginText = string.Empty;
+            return;
+        }
+
+        var parsed = MarginParser.Parse(input);
+        if (parsed.HasValue)
+        {
+            _lastValidMargin = parsed.Value;
+            MarginText = MarginParser.Format(parsed.Value);
+        }
+        else
+        {
+            // Invalid input — revert to last valid value or clear
+            MarginText = _lastValidMargin.HasValue
+                ? MarginParser.Format(_lastValidMargin.Value)
+                : string.Empty;
+        }
+    }
+
     // --- Premium Input Handling ---
 
     public void ApplyPremiumInput(string input)
@@ -671,7 +705,6 @@ public partial class TradeLegViewModel : ObservableObject
     {
         if (_preSolvePremiumText != null)
         {
-            // Re-apply through the same path as manual user input
             ApplyPremiumInput(_preSolvePremiumText);
             _preSolvePremiumText = null;
         }
@@ -786,8 +819,17 @@ public partial class TradeLegViewModel : ObservableObject
     private async Task LoadPortfolioAsync(string currencyPair)
     {
         var portfolio = await _parent.DatabaseService.GetPortfolioForCurrencyPairAsync(currencyPair);
-        if (!string.IsNullOrEmpty(portfolio))
-            PortfolioMX3 = portfolio;
+        PortfolioMX3 = portfolio ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Triggers a portfolio lookup for the current CurrencyPair.
+    /// Called after construction since the field initializer doesn't fire OnCurrencyPairChanged.
+    /// </summary>
+    public async Task LoadPortfolioForCurrentPairAsync()
+    {
+        if (CurrencyPair.Length >= 6)
+            await LoadPortfolioAsync(CurrencyPair);
     }
 
     public TradeLeg ToModel()

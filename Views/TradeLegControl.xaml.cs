@@ -89,6 +89,18 @@ public partial class TradeLegControl : UserControl
         if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyExpiryInput(tb.Text); Keyboard.ClearFocus(); }
     }
 
+    // --- Margin ---
+    private void MarginBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        => ReplaceCommaWithDot(sender, e);
+    private void MarginBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox tb) VM?.ApplyMarginInput(tb.Text);
+    }
+    private void MarginBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyMarginInput(tb.Text); Keyboard.ClearFocus(); }
+    }
+
     // --- Hedge Notional ---
     private void HedgeNotionalBox_PreviewTextInput(object sender, TextCompositionEventArgs e)
         => ReplaceCommaWithDot(sender, e);

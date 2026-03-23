@@ -30,19 +30,46 @@ public partial class TradeGridControl : UserControl
     private const int RowPremium = 13;
     private const int RowPremiumAmount = 14;
     private const int RowPremiumDate = 15;
+    // Admin section — reordered to match legacy app
+    private const int RowAdminSection = 16;    // "ADMIN" section header
+    private const int RowPortfolio = 17;
+    private const int RowTrader = 18;
+    private const int RowExecutionTime = 19;
+    private const int RowMic = 20;
+    private const int RowTvtic = 21;
+    private const int RowIsin = 22;
+    private const int RowSales = 23;
+    private const int RowInvDecId = 24;
+    private const int RowBroker = 25;
+    private const int RowMargin = 26;
+    private const int RowReportingEntity = 27;
     // Hedge section
-    private const int RowHedgeSep = 16;
-    private const int RowHedge = 17;
-    private const int RowHedgeBuySell = 18;
-    private const int RowHedgeNotional = 19;
-    private const int RowHedgeNotionalCcy = 20;
-    private const int RowHedgeRate = 21;
-    private const int RowHedgeSettlement = 22;
-    private const int TotalRows = 23;
+    private const int RowHedgeSep = 28;
+    private const int RowHedge = 29;
+    private const int RowHedgeBuySell = 30;
+    private const int RowHedgeNotional = 31;
+    private const int RowHedgeNotionalCcy = 32;
+    private const int RowHedgeRate = 33;
+    private const int RowHedgeSettlement = 34;
+    // Hedge admin rows
+    private const int RowHedgeTvtic = 35;
+    private const int RowHedgeUti = 36;
+    private const int RowHedgeIsin = 37;
+    private const int RowBookCalypso = 38;
+    private const int TotalRows = 39;
 
     // Hedge detail rows (collapse/expand based on hedge type)
     private static readonly int[] HedgeDetailRows =
         [RowHedgeBuySell, RowHedgeNotional, RowHedgeRate, RowHedgeSettlement];
+
+    // Admin rows (collapse/expand based on ShowAdminRows)
+    private static readonly int[] AdminRows =
+        [RowAdminSection, RowPortfolio, RowTrader, RowExecutionTime, RowMic, RowTvtic,
+         RowIsin, RowSales, RowInvDecId, RowBroker, RowMargin, RowReportingEntity];
+
+    // Hedge admin rows (visible when both ShowAdminRows and HasHedge)
+    private static readonly int[] HedgeAdminRows =
+        [RowHedgeTvtic, RowHedgeUti, RowHedgeIsin, RowBookCalypso];
 
     private const int ColDistInput = 0;
     private const int ColLabel = 1;
@@ -52,6 +79,12 @@ public partial class TradeGridControl : UserControl
 
     // Track hedge detail elements per leg for collapse/expand
     private readonly List<List<UIElement>> _hedgeDetailElements = [];
+
+    // Track admin elements per leg for collapse/expand
+    private readonly List<List<UIElement>> _adminElements = [];
+
+    // Track hedge admin elements per leg for collapse/expand
+    private readonly List<List<UIElement>> _hedgeAdminElements = [];
 
     // Track distributor combos that need clearing
     private ComboBox? _distCounterpart;
@@ -112,6 +145,7 @@ public partial class TradeGridControl : UserControl
             oldVm.Legs.CollectionChanged -= OnLegsChanged;
             oldVm.DistributorClearRequested -= OnDistributorClearRequested;
             oldVm.SolvingDialogRequested -= OnSolvingDialogRequested;
+            oldVm.PropertyChanged -= OnVmPropertyChanged;
             foreach (var leg in oldVm.Legs)
                 leg.PropertyChanged -= OnLegPropertyChanged;
         }
@@ -122,6 +156,7 @@ public partial class TradeGridControl : UserControl
             _vm.Legs.CollectionChanged += OnLegsChanged;
             _vm.DistributorClearRequested += OnDistributorClearRequested;
             _vm.SolvingDialogRequested += OnSolvingDialogRequested;
+            _vm.PropertyChanged += OnVmPropertyChanged;
             foreach (var leg in _vm.Legs)
                 leg.PropertyChanged += OnLegPropertyChanged;
             RebuildGrid();
@@ -144,9 +179,6 @@ public partial class TradeGridControl : UserControl
         }
     }
 
-    /// <summary>
-    /// When solve mode starts, immediately show the SolvingDialog.
-    /// </summary>
     /// <summary>
     /// When solve mode starts, immediately show the SolvingDialog.
     /// </summary>
@@ -185,7 +217,16 @@ public partial class TradeGridControl : UserControl
     private void OnLegPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(TradeLegViewModel.HasHedge))
+        {
             UpdateHedgeVisibility();
+            UpdateAdminVisibility();
+        }
+    }
+
+    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.ShowAdminRows))
+            UpdateAdminVisibility();
     }
 
     private static int LegValCol(int legIndex) => 3 + legIndex * 2;
@@ -247,6 +288,8 @@ public partial class TradeGridControl : UserControl
         RootGrid.RowDefinitions.Clear();
         RootGrid.ColumnDefinitions.Clear();
         _hedgeDetailElements.Clear();
+        _adminElements.Clear();
+        _hedgeAdminElements.Clear();
 
         int legCount = _vm.Legs.Count;
 
@@ -358,8 +401,10 @@ public partial class TradeGridControl : UserControl
         AddSectionHeaderRow(RowAmountSection, "💰  AMOUNTS & PREMIUM", totalCols);
 
         BuildOptionRows(legCount, totalCols);
+        BuildAdminRows(legCount, totalCols);
         BuildHedgeRows(legCount, totalCols);
         UpdateHedgeVisibility();
+        UpdateAdminVisibility();
     }
 
     // ================================================================
@@ -497,7 +542,7 @@ public partial class TradeGridControl : UserControl
         AddCell(RowCut, ColDistInput, _distCut);
 
         var distNotional = CreateDistTextBox();
-        distNotional.ToolTip = "Enter notional (e.g. 5m, 100k, 2b). Press Enter to apply to all legs.";
+        distNotional.ToolTip = "Enter notional (e.g. 5m, 100k, 2b, 1y or plain number). Comma → dot.";
         distNotional.PreviewTextInput += ReplaceCommaWithDot;
         distNotional.KeyDown += (s, e) =>
         {
@@ -658,6 +703,96 @@ public partial class TradeGridControl : UserControl
     }
 
     // ================================================================
+    //  ADMIN ROWS
+    // ================================================================
+    private void BuildAdminRows(int legCount, int totalCols)
+    {
+        // Admin section header
+        AddSectionHeaderRow(RowAdminSection, "⚙  ADMIN", totalCols);
+
+        // Row labels in legacy app order
+        AddRowLabel(RowPortfolio, "Portfolio MX3", totalCols);
+        AddRowLabel(RowTrader, "Trader", totalCols);
+        AddRowLabel(RowExecutionTime, "Execution Time", totalCols);
+        AddRowLabel(RowMic, "MIC", totalCols);
+        AddRowLabel(RowTvtic, "TVTIC", totalCols);
+        AddRowLabel(RowIsin, "ISIN", totalCols);
+        AddRowLabel(RowSales, "Sales", totalCols);
+        AddRowLabel(RowInvDecId, "Investment Decision ID", totalCols);
+        AddRowLabel(RowBroker, "Broker", totalCols);
+        AddRowLabel(RowMargin, "Margin", totalCols);
+        AddRowLabel(RowReportingEntity, "Reporting Entity", totalCols);
+
+        for (int i = 0; i < legCount; i++)
+        {
+            var leg = _vm!.Legs[i];
+            int vc = LegValCol(i);
+
+            var legAdminElements = new List<UIElement>();
+
+            // Portfolio MX3 — combo from reference data
+            var portfolioCombo = CreateLegComboBox(leg, nameof(leg.PortfolioMX3), "ReferenceData.Portfolios");
+            AddCell(RowPortfolio, vc, portfolioCombo);
+            legAdminElements.Add(portfolioCombo);
+
+            // Trader — combo from reference data
+            var traderCombo = CreateLegComboBox(leg, nameof(leg.Trader), "ReferenceData.Traders");
+            AddCell(RowTrader, vc, traderCombo);
+            legAdminElements.Add(traderCombo);
+
+            // Execution Time — read-only, auto-set on save/send
+            var execTimeTb = CreateLegTextBox(leg, nameof(leg.ExecutionTime), isReadOnly: true);
+            AddCell(RowExecutionTime, vc, execTimeTb);
+            legAdminElements.Add(execTimeTb);
+
+            // MIC — combo from reference data
+            var micCombo = CreateLegComboBox(leg, nameof(leg.Mic), "ReferenceData.MICs");
+            AddCell(RowMic, vc, micCombo);
+            legAdminElements.Add(micCombo);
+
+            // TVTIC
+            var tvticTb = CreateLegTextBox(leg, nameof(leg.Tvtic));
+            AddCell(RowTvtic, vc, tvticTb);
+            legAdminElements.Add(tvticTb);
+
+            // ISIN
+            var isinTb = CreateLegTextBox(leg, nameof(leg.Isin));
+            AddCell(RowIsin, vc, isinTb);
+            legAdminElements.Add(isinTb);
+
+            // Sales
+            var salesTb = CreateLegTextBox(leg, nameof(leg.Sales));
+            AddCell(RowSales, vc, salesTb);
+            legAdminElements.Add(salesTb);
+
+            // Investment Decision ID
+            var invDecIdTb = CreateLegTextBox(leg, nameof(leg.InvestmentDecisionID));
+            AddCell(RowInvDecId, vc, invDecIdTb);
+            legAdminElements.Add(invDecIdTb);
+
+            // Broker — combo from reference data
+            var brokerCombo = CreateLegComboBox(leg, nameof(leg.Broker), "ReferenceData.Brokers");
+            AddCell(RowBroker, vc, brokerCombo);
+            legAdminElements.Add(brokerCombo);
+
+            // Margin — validated/formatted on LostFocus/Enter via ApplyMarginInput
+            var marginTb = CreateLegTextBox(leg, nameof(leg.MarginText),
+                trigger: UpdateSourceTrigger.PropertyChanged);
+            marginTb.ToolTip = "Enter margin (e.g. 5k, 100K, 2m, 1M or plain number). Comma → dot. 2 decimals.";
+            AttachNumericHandlers(marginTb, leg.ApplyMarginInput);
+            AddCell(RowMargin, vc, marginTb);
+            legAdminElements.Add(marginTb);
+
+            // Reporting Entity
+            var reportingTb = CreateLegTextBox(leg, nameof(leg.ReportingEntity));
+            AddCell(RowReportingEntity, vc, reportingTb);
+            legAdminElements.Add(reportingTb);
+
+            _adminElements.Add(legAdminElements);
+        }
+    }
+
+    // ================================================================
     //  HEDGE ROWS
     // ================================================================
     private void BuildHedgeRows(int legCount, int totalCols)
@@ -698,6 +833,12 @@ public partial class TradeGridControl : UserControl
         AddRowLabel(RowHedgeNotional, "Notional", totalCols, isHedgeDetail: true);
         AddRowLabel(RowHedgeRate, "Hedge Rate", totalCols, isHedgeDetail: true);
         AddRowLabel(RowHedgeSettlement, "Settlement Date", totalCols, isHedgeDetail: true);
+
+        // Hedge admin labels
+        AddRowLabel(RowHedgeTvtic, "Hedge TVTIC", totalCols);
+        AddRowLabel(RowHedgeUti, "Hedge UTI", totalCols);
+        AddRowLabel(RowHedgeIsin, "Hedge ISIN", totalCols);
+        AddRowLabel(RowBookCalypso, "Book Calypso", totalCols);
 
         AddDistToggle(RowHedgeBuySell, ColDistToggle, DistToggle_HedgeBuySell, "Flippa Hedge Buy/Sell på alla legs");
 
@@ -752,6 +893,7 @@ public partial class TradeGridControl : UserControl
             int vc = LegValCol(i);
 
             var legHedgeElements = new List<UIElement>();
+            var legHedgeAdminElements = new List<UIElement>();
 
             // Hedge type combo — uses enum values directly so binding survives grid rebuilds
             var hedgeCombo = new ComboBox
@@ -800,7 +942,25 @@ public partial class TradeGridControl : UserControl
             AddCell(RowHedgeSettlement, vc, hSettlement);
             legHedgeElements.Add(hSettlement);
 
+            // Hedge admin fields
+            var hTvtic = CreateLegTextBox(leg, nameof(leg.HedgeTVTIC));
+            AddCell(RowHedgeTvtic, vc, hTvtic);
+            legHedgeAdminElements.Add(hTvtic);
+
+            var hUti = CreateLegTextBox(leg, nameof(leg.HedgeUTI));
+            AddCell(RowHedgeUti, vc, hUti);
+            legHedgeAdminElements.Add(hUti);
+
+            var hIsin = CreateLegTextBox(leg, nameof(leg.HedgeISIN));
+            AddCell(RowHedgeIsin, vc, hIsin);
+            legHedgeAdminElements.Add(hIsin);
+
+            var hBook = CreateLegTextBox(leg, nameof(leg.BookCalypso));
+            AddCell(RowBookCalypso, vc, hBook);
+            legHedgeAdminElements.Add(hBook);
+
             _hedgeDetailElements.Add(legHedgeElements);
+            _hedgeAdminElements.Add(legHedgeAdminElements);
         }
     }
 
@@ -884,6 +1044,53 @@ public partial class TradeGridControl : UserControl
             int col = Grid.GetColumn(child);
             if (HedgeDetailRows.Contains(row) && col == ColDistInput)
                 child.Visibility = anyHasHedge ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    // ================================================================
+    //  ADMIN VISIBILITY
+    // ================================================================
+    private void UpdateAdminVisibility()
+    {
+        if (_vm == null) return;
+
+        bool showAdmin = _vm.ShowAdminRows;
+        bool anyHasHedge = _vm.Legs.Any(l => l.HasHedge);
+
+        // Show/hide admin row labels and backgrounds (label/dist columns)
+        foreach (var child in RootGrid.Children.OfType<UIElement>())
+        {
+            int row = Grid.GetRow(child);
+
+            if (AdminRows.Contains(row))
+            {
+                int col = Grid.GetColumn(child);
+                if (col <= ColDistToggle)
+                    child.Visibility = showAdmin ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            if (HedgeAdminRows.Contains(row))
+            {
+                int col = Grid.GetColumn(child);
+                if (col <= ColDistToggle)
+                    child.Visibility = showAdmin && anyHasHedge ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        // Per-leg admin elements
+        for (int i = 0; i < _vm.Legs.Count && i < _adminElements.Count; i++)
+        {
+            var vis = showAdmin ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var el in _adminElements[i])
+                el.Visibility = vis;
+        }
+
+        // Per-leg hedge admin elements — visible only when admin AND the leg has a hedge
+        for (int i = 0; i < _vm.Legs.Count && i < _hedgeAdminElements.Count; i++)
+        {
+            var vis = showAdmin && _vm.Legs[i].HasHedge ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var el in _hedgeAdminElements[i])
+                el.Visibility = vis;
         }
     }
 

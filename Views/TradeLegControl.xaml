@@ -231,7 +231,7 @@
                 </StackPanel>
             </Border>
 
-            <!-- === ADMIN FIELDS === -->
+            <!-- === ADMIN FIELDS (reordered to match legacy app) === -->
             <StackPanel Grid.Row="4"
                         Visibility="{Binding DataContext.ShowAdminRows,
                             RelativeSource={RelativeSource AncestorType=ItemsControl},
@@ -294,6 +294,9 @@
                 <TextBlock Text="MARGIN" Style="{StaticResource FieldLabel}"/>
                 <TextBox Style="{StaticResource TradingTextBox}"
                          Text="{Binding MarginText, UpdateSourceTrigger=PropertyChanged}"
+                         PreviewTextInput="MarginBox_PreviewTextInput"
+                         LostFocus="MarginBox_LostFocus"
+                         KeyDown="MarginBox_KeyDown"
                          Margin="0,0,0,6"/>
 
                 <TextBlock Text="REPORTING ENTITY" Style="{StaticResource FieldLabel}"/>
