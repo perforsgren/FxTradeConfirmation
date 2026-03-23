@@ -211,7 +211,7 @@
                         <TextBox.Tag>
                             <Button Content="{Binding PremiumCurrency}"
                                     Style="{StaticResource InlineSuffixToggle}"
-                                    Command="{Binding TogglePremiumStyleCommand}"/>
+                                    Command="{Binding TogglePremiumCurrencyCommand}"/>
                         </TextBox.Tag>
                     </TextBox>
 

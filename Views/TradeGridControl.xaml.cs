@@ -634,7 +634,7 @@ public partial class TradeGridControl : UserControl
             // Premium Amount — inline currency suffix toggle, disabled until notional+strike present
             // Bind IsReadOnly to IsPremiumLocked OR IsPremiumAmountReadOnly
             var premAmtTb = CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumAmountText),
-                leg, nameof(leg.PremiumCurrency), () => leg.TogglePremiumStyleCommand.Execute(null));
+                leg, nameof(leg.PremiumCurrency), () => leg.TogglePremiumCurrencyCommand.Execute(null));
             premAmtTb.SetBinding(TextBox.IsEnabledProperty,
                 new Binding(nameof(leg.PremiumInputEnabled)) { Source = leg });
             premAmtTb.SetBinding(TextBox.IsReadOnlyProperty,

@@ -721,6 +721,21 @@ public partial class TradeLegViewModel : ObservableObject
     }
 
     [RelayCommand]
+    public void TogglePremiumCurrency()
+    {
+        if (PremiumCurrency == BaseCurrency)
+        {
+            // Switch to quote currency — use PipsQuote as default quote style
+            _parent.SetAllPremiumStyle(PremiumStyle.PipsQuote);
+        }
+        else
+        {
+            // Switch to base currency — use PctBase
+            _parent.SetAllPremiumStyle(PremiumStyle.PctBase);
+        }
+    }
+
+    [RelayCommand]
     public void TogglePremiumDateType()
     {
         PremiumDateType = PremiumDateType == PremiumDateType.Spot
