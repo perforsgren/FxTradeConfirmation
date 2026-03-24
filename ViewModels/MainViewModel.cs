@@ -163,6 +163,7 @@ public partial class MainViewModel : ObservableObject
     private void AddLeg()
     {
         AddLegInternal();
+        RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
     }
 
@@ -170,8 +171,17 @@ public partial class MainViewModel : ObservableObject
     private void DeleteLeg(TradeLegViewModel? leg)
     {
         if (leg == null || Legs.Count <= 1) return;
+
+        // Renumber before removing so CollectionChanged → RebuildGrid sees correct numbers.
+        // Skip the leg being deleted when calculating new numbers.
+        int newNumber = 1;
+        foreach (var l in Legs)
+        {
+            if (l == leg) continue;
+            l.LegNumber = newNumber++;
+        }
+
         Legs.Remove(leg);
-        RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
         OnPropertyChanged(nameof(HasAnyHedge));
         UpdateTotalPremium();
@@ -184,6 +194,7 @@ public partial class MainViewModel : ObservableObject
         var newLeg = new TradeLegViewModel(this, Legs.Count + 1);
         newLeg.CopyFrom(source);
         Legs.Add(newLeg);
+        RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
     }
 
@@ -193,6 +204,7 @@ public partial class MainViewModel : ObservableObject
         CancelSolving();
         Legs.Clear();
         AddLegInternal();
+        RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
         OnPropertyChanged(nameof(HasAnyHedge));
         TotalPremium = 0;

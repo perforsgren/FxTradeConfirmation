@@ -391,6 +391,24 @@ public partial class TradeGridControl : UserControl
             Grid.SetRow(headerPanel, RowHeader);
             Grid.SetColumn(headerPanel, LegValCol(i));
             RootGrid.Children.Add(headerPanel);
+
+            var validIcon = new TextBlock
+            {
+                Text = "⚠",
+                Foreground = FindBrush("NegativeRedBrush"),
+                FontSize = 13,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0),
+                ToolTip = "Required fields missing"
+            };
+            validIcon.SetBinding(UIElement.VisibilityProperty,
+                new Binding(nameof(leg.HasValidationError))
+                {
+                    Source = leg,
+                    Converter = new BooleanToVisibilityConverter()
+                });
+            DockPanel.SetDock(validIcon, Dock.Left);
+            headerPanel.Children.Insert(1, validIcon);
         }
 
         AddSectionHeaderRow(RowTradeSection, "📋  TRADE DETAILS", totalCols);
@@ -465,7 +483,7 @@ public partial class TradeGridControl : UserControl
         AddRowLabel(RowNotional, "Notional", totalCols);
         AddRowLabel(RowPremium, "Premium", totalCols);
         AddRowLabel(RowPremiumAmount, "Premium Amount", totalCols);
-        AddRowLabel(RowPremiumDate, "Premium Date", totalCols, badgeText: "Spot");
+        AddRowLabel(RowPremiumDate, "Premium Date", totalCols);
 
         // Distributor inputs (col 0) — selection clears after distributing
         _distCounterpart = CreateDistComboBox("ReferenceData.Counterparts");

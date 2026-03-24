@@ -1,151 +1,416 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 using FxTradeConfirmation.Models;
-using Microsoft.Office.Interop.Outlook;
 
 namespace FxTradeConfirmation.Services;
 
 public class EmailService : IEmailService
 {
+    private const string Orange = "#E26B0A";
+    private const int ColLabelWidth = 115;
+    private const int ColBadgeWidth = 65;
+    private const int ColLegWidth = 90;
+
     public void SendTradeConfirmation(IReadOnlyList<TradeLeg> legs, ReferenceData referenceData)
     {
-        var app = new Application();
-        MailItem mail = (MailItem)app.CreateItem(OlItemType.olMailItem);
+        var outlookType = Type.GetTypeFromProgID("Outlook.Application")
+            ?? throw new InvalidOperationException("Outlook is not installed or not registered.");
+
+        dynamic app = Activator.CreateInstance(outlookType)!;
+        dynamic mail = app.CreateItem(0); // olMailItem
 
         var ccyPair = legs[0].CurrencyPair;
-        var tradeDate = DateTime.Now.ToString("yyyy-MM-dd");
+        var tradeDate = DateTime.Now.ToShortDateString();
 
         mail.Subject = $"FX Option Trade Confirmation {tradeDate} - {ccyPair}";
 
         // BCC all email addresses from DB
-        foreach (var addr in referenceData.EmailAddresses)
-            mail.BCC += (mail.BCC.Length > 0 ? ";" : "") + addr;
+        var bccAddresses = string.Join(";", referenceData.EmailAddresses);
+        if (!string.IsNullOrEmpty(bccAddresses))
+            mail.BCC = bccAddresses;
 
-        // CC current user
-        mail.CC = GetCurrentUserEmail();
+        mail.CC = $"{Environment.UserName}@swedbank.se";
 
-        // Special DRAX handling
+        // DRAX broker gets specific To-addresses
         if (legs.Any(l => l.Broker == "DRAX"))
-        {
-            mail.To = "drax-specific@example.com"; // Replace with actual DRAX addresses
-        }
+            mail.To = "Fxsales@jbdh.com; middleoffice@jbdh.com; fxpb1@natwestmarkets.com";
 
         mail.HTMLBody = BuildHtmlBody(legs);
-        mail.Display(); // Show in Outlook for review before sending
+        mail.Display();
     }
 
-    private string BuildHtmlBody(IReadOnlyList<TradeLeg> legs)
+    private static string BuildHtmlBody(IReadOnlyList<TradeLeg> legs)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine(@"<html><body style='font-family: Calibri, Arial, sans-serif;'>");
-
-        // Swedbank header
-        sb.AppendLine(@"<div style='background-color: #E26B0A; color: white; padding: 12px 20px; font-size: 18px; font-weight: bold;'>
-            Swedbank - Trade Confirmation</div>");
-
-        bool hasHedge = legs.Any(l => l.Hedge != HedgeType.No);
+        int legCount = legs.Count;
+        int totalCols = legCount + 2; // label + badge + N legs
         bool isDrax = legs.Any(l => l.Broker == "DRAX");
+        bool hasHedge = legs.Any(l => l.Hedge != HedgeType.No);
+        string ccyPair = legs[0].CurrencyPair;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<p></p>");
 
         if (isDrax)
         {
-            sb.AppendLine(@"<div style='background-color: #FFD700; padding: 8px; text-align: center;
-                font-weight: bold; font-size: 14px;'>Manual give up please</div>");
+            sb.AppendLine("<span style='font-size:11pt; font-weight:bold; background-color:yellow;'>Manual give up please</span>");
+            sb.AppendLine("<br><br>");
         }
 
-        // Option details per leg
-        for (int i = 0; i < legs.Count; i++)
-        {
-            var leg = legs[i];
-            if (legs.Count > 1)
-                sb.AppendLine($"<h3 style='color: #E26B0A;'>Leg {i + 1}</h3>");
+        sb.AppendLine("<table border='0' cellpadding='0' cellspacing='0'>");
 
-            sb.AppendLine("<table style='border-collapse: collapse; margin: 10px 0;'>");
-            AddRow(sb, "Trade Date", DateTime.Now.ToString("yyyy-MM-dd"));
-            AddRow(sb, "Contract", leg.CurrencyPair);
-            AddRow(sb, "Client Buy/Sell", leg.BuySell.ToString());
-            AddRow(sb, "Call/Put", leg.CallPut.ToString());
-            AddRow(sb, "Strike", leg.Strike?.ToString("0.0000") ?? Highlight("N/A"));
-            AddRow(sb, "Notional Amount", FormatNotional(leg.Notional, leg.NotionalCurrency));
-            AddRow(sb, "Expiry Cut", leg.Cut);
-            AddRow(sb, "Expiry Date", leg.ExpiryDate?.ToString("yyyy-MM-dd") ?? Highlight("N/A"));
-            AddRow(sb, "Delivery Date", leg.SettlementDate?.ToString("yyyy-MM-dd") ?? Highlight("N/A"));
-            AddRow(sb, "Option Price", FormatPremium(leg));
-            AddRow(sb, "Premium", FormatPremiumAmount(leg));
-            AddRow(sb, "Premium Date", leg.PremiumDate?.ToString("yyyy-MM-dd") ?? Highlight("N/A"));
+        // ── Header: "Swedbank" ──
+        sb.AppendLine("<tr style='font-size: 12pt'><td><b>Swedbank</b></td></tr>");
+
+        // ── Orange banner: "Trade Confirmation" ──
+        sb.Append($"<tr style='font-size: 12pt; background-color:{Orange}; color:#ffffff'>");
+        sb.Append("<td style='border-bottom: 1px solid black;' colspan='2'><b>Trade Confirmation</b></td>");
+        for (int i = 0; i < legCount; i++)
+            sb.Append("<td style='border-bottom: 1px solid black;'></td>");
+        sb.AppendLine("</tr>");
+
+        // ── Sub-header: "FX Vanilla Option" or leg labels ──
+        if (legCount == 1)
+        {
+            sb.AppendLine($"<tr style='font-size: 11pt; padding-bottom: 5pt; padding-top: 5pt;'><td><font color='{Orange}'><b>FX Vanilla Option</b></font></td></tr>");
+        }
+        else
+        {
+            sb.Append($"<tr style='font-size: 10pt'><font color='{Orange}'><td></td><td></td>");
+            for (int i = 0; i < legCount; i++)
+                sb.Append("<td style='padding-bottom: 0pt; padding-top: 3pt;'><b>Vanilla</b></td>");
+            sb.AppendLine("</font></tr>");
+
+            sb.Append("<tr style='font-size: 10pt'><td></td><td></td>");
+            for (int i = 0; i < legCount; i++)
+                sb.Append($"<td style='padding-bottom: 3pt; padding-top: 1pt;'><b>Leg {i + 1}</b></td>");
+            sb.AppendLine("</tr>");
+        }
+
+        // ── Double-line separator ──
+        sb.Append("<tr>");
+        for (int i = 0; i < totalCols; i++)
+            sb.Append("<td style='border-bottom: 3pt double black; padding-bottom: 0pt;'></td>");
+        sb.AppendLine("</tr>");
+        SpacerRow(sb, totalCols);
+
+        // ══════════════════════════════════════════
+        //  Section 1: Trade Date, Contract, Buy/Sell
+        // ══════════════════════════════════════════
+
+        RowStart(sb, "Trade Date");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCell(sb, DateTime.Now.ToShortDateString());
+        RowEnd(sb);
+
+        RowStart(sb, "Contract");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCellOrNA(sb, ccyPair);
+        RowEnd(sb);
+
+        RowStart(sb, "Client Buy/Sell");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCell(sb, legs[i].BuySell.ToString());
+        RowEnd(sb);
+
+        // ── Empty row ──
+        EmptyRow(sb);
+
+        // ══════════════════════════════════════════
+        //  Section 2: Call/Put, Strike, Notional
+        // ══════════════════════════════════════════
+
+        RowStart(sb, "Call/Put");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCell(sb, legs[i].CallPut.ToString());
+        RowEnd(sb);
+
+        RowStart(sb, "Strike");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCellOrNA(sb, legs[i].Strike?.ToString("0.0000"));
+        RowEnd(sb);
+
+        RowStart(sb, "Notional Amount");
+        BadgeCell(sb, legs[0].NotionalCurrency);
+        for (int i = 0; i < legCount; i++)
+            LegCellOrNA(sb, FormatNumber(legs[i].Notional, false));
+        RowEnd(sb);
+
+        // ── Empty row ──
+        EmptyRow(sb);
+
+        // ══════════════════════════════════════════
+        //  Section 3: Cut, Expiry, Delivery
+        // ══════════════════════════════════════════
+
+        RowStart(sb, "Expiry Cut");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCell(sb, legs[i].Cut);
+        RowEnd(sb);
+
+        RowStart(sb, "Expiry Date");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCellOrNA(sb, legs[i].ExpiryDate?.ToShortDateString());
+        RowEnd(sb);
+
+        RowStart(sb, "Delivery Date");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCellOrNA(sb, legs[i].SettlementDate?.ToShortDateString());
+        RowEnd(sb);
+
+        // ── Empty row ──
+        EmptyRow(sb);
+
+        // ══════════════════════════════════════════
+        //  Section 4: Option Price, Premium, Premium Date
+        // ══════════════════════════════════════════
+
+        decimal totalPremium = 0m;
+
+        RowStart(sb, "Option Price");
+        BadgeCell(sb, GetPremiumStyleBadge(legs[0]));
+        for (int i = 0; i < legCount; i++)
+            LegCellOrNA(sb, FormatPremium(legs[i]));
+        RowEnd(sb);
+
+        RowStart(sb, "Premium");
+        BadgeCell(sb, legs[0].PremiumCurrency);
+        for (int i = 0; i < legCount; i++)
+        {
+            if (legs[i].PremiumAmount.HasValue)
+            {
+                totalPremium += legs[i].PremiumAmount.Value;
+                LegCell(sb, FormatNumber(legs[i].PremiumAmount, false));
+            }
+            else
+            {
+                LegCellNA(sb);
+            }
+        }
+        RowEnd(sb);
+
+        RowStart(sb, "Premium Date");
+        BadgeCell(sb, "");
+        for (int i = 0; i < legCount; i++)
+            LegCellOrNA(sb, legs[i].PremiumDate?.ToShortDateString());
+        RowEnd(sb);
+
+        // ── Empty row ──
+        EmptyRow(sb);
+
+        sb.AppendLine("</table>");
+
+        // ══════════════════════════════════════════
+        //  Total Premium (multi-leg only)
+        // ══════════════════════════════════════════
+
+        if (legCount > 1)
+        {
+            var premCcy = legs[0].PremiumCurrency;
+
+            sb.AppendLine("<table border='0' cellpadding='0' cellspacing='0'>");
+            sb.Append($"<tr style='font-size: 10pt'><font color='{Orange}'><td width='{ColLabelWidth}'><b>Total Premium: </b></font></td>");
+
+            if (totalPremium > 0)
+                sb.Append($"<td><font color='{Orange}'><b>Client receives {FormatNumber(totalPremium, true)} {premCcy}</b></font></td>");
+            else if (totalPremium < 0)
+                sb.Append($"<td><font color='{Orange}'><b>Client pays {FormatNumber(Math.Abs(totalPremium), true)} {premCcy}</b></font></td>");
+            else
+                sb.Append($"<td><font color='{Orange}'><b>Net zero cost</b></font></td>");
+
+            sb.AppendLine("</tr>");
+            EmptyRow(sb);
             sb.AppendLine("</table>");
         }
 
-        // Total premium for multi-leg
-        if (legs.Count > 1)
-        {
-            var totalPremium = legs.Sum(l => l.PremiumAmount ?? 0m);
-            var ccy = legs[0].PremiumCurrency;
-            string description = totalPremium > 0 ? $"Client receives {totalPremium:N2} {ccy}"
-                               : totalPremium < 0 ? $"Client pays {Math.Abs(totalPremium):N2} {ccy}"
-                               : "Net zero cost";
-            sb.AppendLine($"<p style='font-weight: bold; font-size: 14px;'>{description}</p>");
-        }
+        // ══════════════════════════════════════════
+        //  Hedge section
+        // ══════════════════════════════════════════
 
-        // Hedge section
         if (hasHedge)
         {
-            sb.AppendLine(@"<div style='background-color: #4472C4; color: white; padding: 8px 20px;
-                font-weight: bold; margin-top: 15px;'>Delta Hedge</div>");
+            sb.AppendLine("<p></p>");
+            sb.AppendLine("<table border='0' cellpadding='0' cellspacing='0'>");
 
-            for (int i = 0; i < legs.Count; i++)
+            // Orange hedge banner
+            sb.Append($"<tr style='font-size: 12pt; background-color:{Orange};'>");
+            sb.Append("<td style='color: white; border-bottom: 1px solid black;'><b>Delta Hedge</b></td>");
+            for (int i = 1; i < totalCols; i++)
+                sb.Append("<td style='border-bottom: 1px solid black;'></td>");
+            sb.AppendLine("</tr>");
+            SpacerRow(sb, totalCols);
+
+            // Hedge Type
+            RowStart(sb, "Hedge Type");
+            BadgeCell(sb, "");
+            for (int i = 0; i < legCount; i++)
             {
-                var leg = legs[i];
-                if (leg.Hedge == HedgeType.No) continue;
-
-                if (legs.Count(l => l.Hedge != HedgeType.No) > 1)
-                    sb.AppendLine($"<h3 style='color: #4472C4;'>Leg {i + 1}</h3>");
-
-                sb.AppendLine("<table style='border-collapse: collapse; margin: 10px 0;'>");
-                AddRow(sb, "Hedge Type", leg.Hedge.ToString());
-                AddRow(sb, "Notional Amount", FormatNotional(leg.HedgeNotional, leg.HedgeNotionalCurrency));
-                AddRow(sb, "Client Buy/Sell", leg.HedgeBuySell.ToString());
-                AddRow(sb, "Hedge Rate", leg.HedgeRate?.ToString("0.0000") ?? Highlight("N/A"));
-                AddRow(sb, "Delivery Date", leg.HedgeSettlementDate?.ToString("yyyy-MM-dd") ?? Highlight("N/A"));
-                sb.AppendLine("</table>");
+                var h = legs[i].Hedge;
+                LegCell(sb, h == HedgeType.No ? "" : h.ToString());
             }
+            RowEnd(sb);
+
+            // Notional Amount (hedge)
+            RowStart(sb, "Notional Amount");
+            BadgeCell(sb, legs.FirstOrDefault(l => l.Hedge != HedgeType.No)?.HedgeNotionalCurrency ?? "");
+            for (int i = 0; i < legCount; i++)
+            {
+                if (legs[i].Hedge != HedgeType.No)
+                    LegCellOrNA(sb, FormatNumber(legs[i].HedgeNotional.HasValue ? Math.Abs(legs[i].HedgeNotional.Value) : null, false));
+                else
+                    LegCell(sb, "");
+            }
+            RowEnd(sb);
+
+            // Client Buy/Sell (hedge)
+            RowStart(sb, "Client Buy/Sell");
+            BadgeCell(sb, "");
+            for (int i = 0; i < legCount; i++)
+            {
+                if (legs[i].Hedge != HedgeType.No)
+                    LegCellOrNA(sb, legs[i].HedgeBuySell.ToString());
+                else
+                    LegCell(sb, "");
+            }
+            RowEnd(sb);
+
+            // Hedge Rate
+            RowStart(sb, "Hedge Rate");
+            BadgeCell(sb, "");
+            for (int i = 0; i < legCount; i++)
+            {
+                if (legs[i].Hedge != HedgeType.No)
+                    LegCellOrNA(sb, legs[i].HedgeRate?.ToString("0.0000"));
+                else
+                    LegCell(sb, "");
+            }
+            RowEnd(sb);
+
+            // Delivery Date (hedge)
+            RowStart(sb, "Delivery Date");
+            BadgeCell(sb, "");
+            for (int i = 0; i < legCount; i++)
+            {
+                if (legs[i].Hedge != HedgeType.No)
+                    LegCellOrNA(sb, legs[i].HedgeSettlementDate?.ToShortDateString());
+                else
+                    LegCell(sb, "");
+            }
+            RowEnd(sb);
+
+            sb.AppendLine("</table>");
+        }
+        else
+        {
+            sb.AppendLine("<p></p>");
+            sb.AppendLine("<span style='font-size: 10pt'>Deal done without delta hedge</span>");
         }
 
-        sb.AppendLine("</body></html>");
         return sb.ToString();
     }
 
-    private static void AddRow(StringBuilder sb, string label, string value)
+    // ── Table helpers ──
+
+    private static void RowStart(StringBuilder sb, string label)
     {
-        sb.AppendLine($@"<tr>
-            <td style='padding: 3px 15px 3px 5px; font-weight: bold; color: #333;'>{label}</td>
-            <td style='padding: 3px 5px;'>{value}</td>
-        </tr>");
+        sb.Append($"<tr style='font-size: 10pt'><td width='{ColLabelWidth}'><b>{label}</b></td>");
     }
 
-    private static string Highlight(string text) =>
-        $"<span style='color: red; font-weight: bold;'>{text}</span>";
-
-    private static string FormatNotional(decimal? notional, string currency) =>
-        notional.HasValue ? $"{notional.Value:N0} {currency}" : Highlight("N/A");
-
-    private static string FormatPremium(TradeLeg leg)
+    private static void BadgeCell(StringBuilder sb, string badge)
     {
-        if (!leg.Premium.HasValue)
-            return Highlight("N/A");
+        if (!string.IsNullOrEmpty(badge))
+            sb.Append($"<td width='{ColBadgeWidth}' style='text-align:center; vertical-align:middle;'><font color='{Orange}'><b>{badge}</b></font></td>");
+        else
+            sb.Append($"<td width='{ColBadgeWidth}'></td>");
+    }
 
+    private static void LegCell(StringBuilder sb, string? value)
+    {
+        sb.Append($"<td width='{ColLegWidth}'>{value}</td>");
+    }
+
+    private static void LegCellNA(StringBuilder sb)
+    {
+        sb.Append($"<td width='{ColLegWidth}'><font color='red'>N/A</font></td>");
+    }
+
+    private static void LegCellOrNA(StringBuilder sb, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            LegCellNA(sb);
+        else
+            LegCell(sb, value);
+    }
+
+    private static void RowEnd(StringBuilder sb) => sb.AppendLine("</tr>");
+
+    private static void SpacerRow(StringBuilder sb, int totalCols)
+    {
+        sb.AppendLine($"<tr><td colspan='{totalCols}' style='height: 5px;'></td></tr>");
+    }
+
+    private static void EmptyRow(StringBuilder sb)
+    {
+        sb.AppendLine("<tr style='font-size: 10pt' bgcolor='#ffffff'>&nbsp</tr>");
+    }
+
+    // ── Formatting helpers ──
+
+    private static string? FormatNumber(decimal? value, bool useDecimals)
+    {
+        if (!value.HasValue) return null;
+        var v = value.Value;
+
+        if (useDecimals)
+        {
+            var raw = v.ToString("G29", CultureInfo.InvariantCulture);
+            int dotIdx = raw.IndexOf('.');
+            int actualDecimals = dotIdx >= 0 ? raw.Length - dotIdx - 1 : 0;
+            return v.ToString($"N{actualDecimals}", SwedishFormat);
+        }
+
+        return v.ToString("N0", SwedishFormat);
+    }
+
+    private static string? FormatPremium(TradeLeg leg)
+    {
+        if (!leg.Premium.HasValue) return null;
+
+        // Premium (pips/pct) is stored as absolute value — derive the sign from PremiumAmount.
+        // Buy = client pays = negative, Sell = client receives = positive.
+        decimal sign = leg.PremiumAmount.HasValue && leg.PremiumAmount.Value < 0 ? -1m : 1m;
+        var v = leg.Premium.Value * sign;
+
+        bool isPct = leg.PremiumStyle is PremiumStyle.PctBase or PremiumStyle.PctQuote;
+
+        if (isPct)
+            return v.ToString("G29", CultureInfo.InvariantCulture) + "%";
+
+        return FormatNumber(v, true);
+    }
+
+    private static string GetPremiumStyleBadge(TradeLeg leg)
+    {
         return leg.PremiumStyle switch
         {
-            PremiumStyle.PctBase => $"{leg.Premium.Value:N4}% {leg.BaseCurrency}",
-            PremiumStyle.PipsQuote => $"{leg.Premium.Value:N4} {leg.QuoteCurrency} pips",
-            PremiumStyle.PctQuote => $"{leg.Premium.Value:N4}% {leg.QuoteCurrency}",
-            _ => $"{leg.Premium.Value:N4}"
+            PremiumStyle.PipsQuote => $"{leg.QuoteCurrency} pips",
+            PremiumStyle.PctBase => $"%{leg.BaseCurrency}",
+            PremiumStyle.PctQuote => $"%{leg.QuoteCurrency}",
+            _ => ""
         };
     }
 
-    private static string FormatPremiumAmount(TradeLeg leg) =>
-        leg.PremiumAmount.HasValue
-            ? $"{leg.PremiumAmount.Value:N2} {leg.PremiumCurrency}"
-            : Highlight("N/A");
-
-    private static string GetCurrentUserEmail() =>
-        $"{Environment.UserName}@swedbank.se"; // Adjust domain as needed
+    private static readonly NumberFormatInfo SwedishFormat = new()
+    {
+        NumberGroupSeparator = " ",
+        NumberDecimalSeparator = ",",
+        NumberGroupSizes = [3]
+    };
 }
