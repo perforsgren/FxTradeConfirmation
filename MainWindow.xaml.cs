@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Shapes;
 using FxTradeConfirmation.ViewModels;
 
@@ -63,8 +64,48 @@ public partial class MainWindow : Window
         if (MaximizeIcon is Path icon)
         {
             icon.Data = WindowState == WindowState.Maximized
-                ? System.Windows.Media.Geometry.Parse("M 0 3 H 7 V 10 H 0 Z M 3 3 V 0 H 10 V 7 H 7")
-                : System.Windows.Media.Geometry.Parse("M 0 0 H 10 V 10 H 0 Z");
+                ? Geometry.Parse("M 0 3 H 7 V 10 H 0 Z M 3 3 V 0 H 10 V 7 H 7")
+                : Geometry.Parse("M 0 0 H 10 V 10 H 0 Z");
+        }
+
+        // Remove rounded corners when maximized
+        if (WindowState == WindowState.Maximized)
+        {
+            RootBorder.CornerRadius = new CornerRadius(0);
+            RootBorder.Margin = new Thickness(0);
+            RootBorder.Clip = null;
+        }
+        else
+        {
+            RootBorder.CornerRadius = new CornerRadius(12);
+            RootBorder.Margin = new Thickness(1);
+            UpdateClip();
+        }
+    }
+
+    private void RootBorder_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateClip();
+    }
+
+    private void UpdateClip()
+    {
+        if (WindowState == WindowState.Maximized)
+        {
+            RootBorder.Clip = null;
+            return;
+        }
+
+        var w = RootBorder.ActualWidth;
+        var h = RootBorder.ActualHeight;
+        if (w > 0 && h > 0)
+        {
+            RootBorder.Clip = new RectangleGeometry
+            {
+                Rect = new Rect(0, 0, w, h),
+                RadiusX = 12,
+                RadiusY = 12
+            };
         }
     }
 

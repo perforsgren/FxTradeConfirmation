@@ -10,7 +10,9 @@
         SizeToContent="WidthAndHeight"
         MinWidth="570" MinHeight="400"
         WindowStyle="None"
-        WindowState="Normal" Background="{StaticResource BgDarkestBrush}">
+        AllowsTransparency="True"
+        WindowState="Normal"
+        Background="Transparent">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="32"
@@ -23,184 +25,192 @@
         <conv:PremiumColorConverter x:Key="PremiumColor"/>
     </Window.Resources>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="32"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <Border x:Name="RootBorder"
+            Background="{StaticResource BgDarkestBrush}"
+            CornerRadius="12"
+            BorderBrush="{StaticResource BorderDefaultBrush}"
+            BorderThickness="1"
+            Margin="1"
+            SizeChanged="RootBorder_SizeChanged">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <!-- === CUSTOM WINDOW CHROME TITLE BAR === -->
-        <Border Grid.Row="0" Background="{StaticResource BgDarkBrush}"
-                BorderBrush="{StaticResource BorderDefaultBrush}"
-                BorderThickness="0,0,0,1">
-            <DockPanel>
-                <!-- Window caption buttons (right) -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                            VerticalAlignment="Stretch">
-                    <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButton}"
-                            Click="OnMinimize">
-                        <Path Data="M 0 0 H 10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                    </Button>
-                    <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}"
-                            Click="OnMaximizeRestore">
-                        <Path x:Name="MaximizeIcon"
-                              Data="M 0 0 H 10 V 10 H 0 Z"
+            <!-- === CUSTOM WINDOW CHROME TITLE BAR === -->
+            <Border Grid.Row="0" Background="{StaticResource BgDarkBrush}"
+                    BorderBrush="{StaticResource BorderDefaultBrush}"
+                    BorderThickness="0,0,0,1"
+                    CornerRadius="12,12,0,0">
+                <DockPanel>
+                    <!-- Window caption buttons (right) -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                VerticalAlignment="Stretch">
+                        <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButton}"
+                                Click="OnMinimize">
+                            <Path Data="M 0 0 H 10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
+                        <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}"
+                                Click="OnMaximizeRestore">
+                            <Path x:Name="MaximizeIcon"
+                                  Data="M 0 0 H 10 V 10 H 0 Z"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1" Fill="Transparent"
+                                  VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
+                        <Button x:Name="CloseButton" Style="{StaticResource CaptionCloseButton}"
+                                Click="OnClose">
+                            <Path Data="M 0 0 L 10 10 M 0 10 L 10 0"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                  StrokeThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Title text (left, draggable area) -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                        <TextBlock FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontFamily="{StaticResource MainFont}"
+                                   VerticalAlignment="Center">
+                            <Run Text="FX" Foreground="{StaticResource AccentBlueBrush}"/>
+                            <Run Text=" Trade Confirmation"/>
+                        </TextBlock>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- === TOOLBAR === -->
+            <Border Grid.Row="1" Background="{StaticResource BgDarkBrush}"
+                    Padding="8,6" BorderBrush="{StaticResource BorderDefaultBrush}"
+                    BorderThickness="0,0,0,1"
+                    MaxWidth="{Binding ActualWidth, ElementName=GridScrollViewer}">
+                <DockPanel>
+                    <!-- Right-aligned primary actions -->
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                        HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Style="{StaticResource ToolbarPrimaryButton}"
+                        Command="{Binding SaveCommand}" Margin="4,0,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M2,0 H10 L12,2 V14 H0 V0 Z M4,0 V4 H9 V0 M2,8 H10 V14 H2 Z"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                               StrokeThickness="1" Fill="Transparent"
-                              VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                    </Button>
-                    <Button x:Name="CloseButton" Style="{StaticResource CaptionCloseButton}"
-                            Click="OnClose">
-                        <Path Data="M 0 0 L 10 10 M 0 10 L 10 0"
+                              Width="12" Height="12" Stretch="Uniform"
+                              Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Save" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Left-aligned secondary actions -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource ToolbarButton}"
+                        Command="{Binding AddLegCommand}" Margin="0,0,4,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M6,0 V12 M0,6 H12"
+                              Stroke="{StaticResource PositiveGreenBrush}"
+                              StrokeThickness="1.5"
+                              Width="10" Height="10" Stretch="Uniform"
+                              Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Add Leg" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Style="{StaticResource ToolbarDangerButton}"
+                        Command="{Binding ClearAllCommand}" Margin="0,0,4,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M0,0 L10,10 M10,0 L0,10"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                    </Button>
-                </StackPanel>
+                              StrokeThickness="1.5"
+                              Width="9" Height="9" Stretch="Uniform"
+                              Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Clear All" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
 
-                <!-- Title text (left, draggable area) -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <TextBlock FontSize="15" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
-                               FontFamily="{StaticResource MainFont}"
-                               VerticalAlignment="Center">
-                        <Run Text="FX" Foreground="{StaticResource AccentBlueBrush}"/>
-                        <Run Text=" Trade Confirmation"/>
-                    </TextBlock>
-                </StackPanel>
-            </DockPanel>
-        </Border>
+                        <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
+                        Margin="8,2"/>
 
-        <!-- === TOOLBAR === -->
-        <!-- === TOOLBAR === -->
-        <Border Grid.Row="1" Background="{StaticResource BgDarkBrush}"
-                Padding="8,6" BorderBrush="{StaticResource BorderDefaultBrush}"
-                BorderThickness="0,0,0,1"
-                MaxWidth="{Binding ActualWidth, ElementName=GridScrollViewer}">
-            <DockPanel>
-                <!-- Right-aligned primary actions -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                    HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ToolbarPrimaryButton}"
-                    Command="{Binding SaveCommand}" Margin="4,0,0,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Data="M2,0 H10 L12,2 V14 H0 V0 Z M4,0 V4 H9 V0 M2,8 H10 V14 H2 Z"
-                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="1" Fill="Transparent"
-                          Width="12" Height="12" Stretch="Uniform"
-                          Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Save" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
+                        <Button Style="{StaticResource ToolbarButton}"
+                        Command="{Binding SendMailCommand}" Margin="4,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M0,2 L7,8 L14,2 M0,2 H14 V12 H0 Z"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1" Fill="Transparent"
+                              Width="12" Height="10" Stretch="Uniform"
+                              Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Mail" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
 
-                <!-- Left-aligned secondary actions -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ToolbarButton}"
-                    Command="{Binding AddLegCommand}" Margin="0,0,4,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Data="M6,0 V12 M0,6 H12"
-                          Stroke="{StaticResource PositiveGreenBrush}"
-                          StrokeThickness="1.5"
-                          Width="10" Height="10" Stretch="Uniform"
-                          Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Add Leg" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
+                        <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
+                        Margin="8,2"/>
 
-                    <Button Style="{StaticResource ToolbarDangerButton}"
-                    Command="{Binding ClearAllCommand}" Margin="0,0,4,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Data="M0,0 L10,10 M10,0 L0,10"
-                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="1.5"
-                          Width="9" Height="9" Stretch="Uniform"
-                          Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Clear All" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-
-                    <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
-                    Margin="8,2"/>
-
-                    <Button Style="{StaticResource ToolbarButton}"
-                    Command="{Binding SendMailCommand}" Margin="4,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Data="M0,2 L7,8 L14,2 M0,2 H14 V12 H0 Z"
-                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="1" Fill="Transparent"
-                          Width="12" Height="10" Stretch="Uniform"
-                          Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Mail" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-
-                    <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
-                    Margin="8,2"/>
-
-                    <Button Style="{StaticResource ToolbarButton}"
-                    Command="{Binding ToggleAdminRowsCommand}"
-                    Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"
-                    Margin="4,0">
-                        <StackPanel Orientation="Horizontal">
-                            <Path Data="M7,0 A2,2 0 1,1 7,4 A2,2 0 1,1 7,0 M3,9 A5,5 0 0,1 11,9"
-                          Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          StrokeThickness="1.2" Fill="Transparent"
-                          Width="11" Height="11" Stretch="Uniform"
-                          Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Admin" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </DockPanel>
-        </Border>
+                        <Button Style="{StaticResource ToolbarButton}"
+                        Command="{Binding ToggleAdminRowsCommand}"
+                        Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"
+                        Margin="4,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M7,0 A2,2 0 1,1 7,4 A2,2 0 1,1 7,0 M3,9 A5,5 0 0,1 11,9"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.2" Fill="Transparent"
+                              Width="11" Height="11" Stretch="Uniform"
+                              Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Admin" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
 
 
-        <!-- === MAIN GRID AREA === -->
-        <ScrollViewer x:Name="GridScrollViewer" Grid.Row="2"
-                      HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Disabled"
-                      Margin="0,0,0,8">
-            <views:TradeGridControl DataContext="{Binding}"/>
-        </ScrollViewer>
+            <!-- === MAIN GRID AREA === -->
+            <ScrollViewer x:Name="GridScrollViewer" Grid.Row="2"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled"
+                          Margin="0,0,0,8">
+                <views:TradeGridControl DataContext="{Binding}"/>
+            </ScrollViewer>
 
-        <!-- === TOTAL PREMIUM BAR === -->
-        <Border Grid.Row="3" Background="{StaticResource BgDarkBrush}"
-                Padding="16,8" BorderBrush="{StaticResource BorderDefaultBrush}"
-                BorderThickness="0,1,0,0"
-                Visibility="{Binding HasMultipleLegs, Converter={StaticResource BoolToVis}}">
-            <DockPanel>
-                <TextBlock Text="TOTAL PREMIUM" Style="{StaticResource FieldLabel}"
-                           DockPanel.Dock="Left" FontWeight="Bold" FontSize="12"
-                           VerticalAlignment="Center"/>
-                <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
-                           FontFamily="{StaticResource MonoFont}" FontSize="16"
-                           FontWeight="Bold" VerticalAlignment="Center"
-                           Foreground="{Binding TotalPremium, Converter={StaticResource PremiumColor}}"
-                           Text="{Binding TotalPremiumDisplay}"/>
-            </DockPanel>
-        </Border>
+            <!-- === TOTAL PREMIUM BAR === -->
+            <Border Grid.Row="3" Background="{StaticResource BgDarkBrush}"
+                    Padding="16,8" BorderBrush="{StaticResource BorderDefaultBrush}"
+                    BorderThickness="0,1,0,0"
+                    Visibility="{Binding HasMultipleLegs, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <TextBlock Text="TOTAL PREMIUM" Style="{StaticResource FieldLabel}"
+                               DockPanel.Dock="Left" FontWeight="Bold" FontSize="12"
+                               VerticalAlignment="Center"/>
+                    <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right"
+                               FontFamily="{StaticResource MonoFont}" FontSize="16"
+                               FontWeight="Bold" VerticalAlignment="Center"
+                               Foreground="{Binding TotalPremium, Converter={StaticResource PremiumColor}}"
+                               Text="{Binding TotalPremiumDisplay}"/>
+                </DockPanel>
+            </Border>
 
-        <!-- === STATUS BAR === -->
-        <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
-                Padding="16,6" BorderBrush="{StaticResource BorderDefaultBrush}"
-                BorderThickness="0,1,0,0">
-            <DockPanel>
-                <TextBlock Text="{Binding StatusMessage}"
-                           Foreground="{StaticResource TextMutedBrush}" FontSize="11"
-                           VerticalAlignment="Center"/>
-
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                            HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
-                    <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToConnectionText}}"
+            <!-- === STATUS BAR === -->
+            <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
+                    Padding="16,6" BorderBrush="{StaticResource BorderDefaultBrush}"
+                    BorderThickness="0,1,0,0">
+                <DockPanel>
+                    <TextBlock Text="{Binding StatusMessage}"
                                Foreground="{StaticResource TextMutedBrush}" FontSize="11"
                                VerticalAlignment="Center"/>
-                </StackPanel>
-            </DockPanel>
-        </Border>
-    </Grid>
+
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToConnectionText}}"
+                                   Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

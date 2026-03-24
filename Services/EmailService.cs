@@ -29,7 +29,7 @@ public class EmailService : IEmailService
         if (!string.IsNullOrEmpty(bccAddresses))
             mail.BCC = bccAddresses;
 
-        mail.CC = $"{Environment.UserName}@swedbank.se";
+        mail.CC = $"{Environment.UserName}";
 
         // DRAX broker gets specific To-addresses
         if (legs.Any(l => l.Broker == "DRAX"))
