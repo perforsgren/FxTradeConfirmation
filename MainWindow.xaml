@@ -8,67 +8,23 @@
         mc:Ignorable="d"
         Title="FX Trade Confirmation"
         SizeToContent="WidthAndHeight"
-        MinWidth="586" MinHeight="400"
-        WindowState="Normal"
         WindowStyle="None"
-        Background="{StaticResource BgDarkestBrush}">
+        WindowState="Normal" Background="{StaticResource BgDarkestBrush}">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="32"
+                      ResizeBorderThickness="6"
+                      GlassFrameThickness="0"
+                      CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
 
     <Window.Resources>
         <conv:PremiumColorConverter x:Key="PremiumColor"/>
-
-        <!-- Window control button -->
-        <Style x:Key="WindowChromeButton" TargetType="Button">
-            <Setter Property="Width" Value="40"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
-            <Setter Property="Cursor" Value="Arrow"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#20FFFFFF"/>
-                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#30FFFFFF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Close button (red hover) -->
-        <Style x:Key="WindowCloseButton" TargetType="Button" BasedOn="{StaticResource WindowChromeButton}">
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#E81123"/>
-                                <Setter Property="Foreground" Value="White"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#B31019"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -76,59 +32,62 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- === TITLE BAR === -->
+        <!-- === CUSTOM WINDOW CHROME TITLE BAR === -->
         <Border Grid.Row="0" Background="{StaticResource BgDarkBrush}"
                 BorderBrush="{StaticResource BorderDefaultBrush}"
-                BorderThickness="0,0,0,1"
-                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-            <DockPanel Height="36">
-                <!-- Window buttons (right) -->
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Stretch">
-                    <Button Style="{StaticResource WindowChromeButton}" Click="MinimizeButton_Click">
-                        <Path Data="M0,5 H10"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1"/>
+                BorderThickness="0,0,0,1">
+            <DockPanel>
+                <!-- Window caption buttons (right) -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            VerticalAlignment="Stretch">
+                    <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButton}"
+                            Click="OnMinimize">
+                        <Path Data="M 0 0 H 10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                     </Button>
-                    <Button Style="{StaticResource WindowChromeButton}" Click="MaximizeButton_Click">
-                        <Path x:Name="MaximizeIcon" Data="M0,0 H10 V10 H0 Z"
+                    <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}"
+                            Click="OnMaximizeRestore">
+                        <Path x:Name="MaximizeIcon"
+                              Data="M 0 0 H 10 V 10 H 0 Z"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1" Fill="Transparent"/>
+                              StrokeThickness="1" Fill="Transparent"
+                              VerticalAlignment="Center" HorizontalAlignment="Center"/>
                     </Button>
-                    <Button Style="{StaticResource WindowCloseButton}" Click="CloseButton_Click">
-                        <Path Data="M0,0 L10,10 M10,0 L0,10"
+                    <Button x:Name="CloseButton" Style="{StaticResource CaptionCloseButton}"
+                            Click="OnClose">
+                        <Path Data="M 0 0 L 10 10 M 0 10 L 10 0"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1"/>
+                              StrokeThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                     </Button>
                 </StackPanel>
 
-                <!-- Title (left, fills remaining space) -->
-                <StackPanel Orientation="Horizontal" Margin="16,0" VerticalAlignment="Center">
-                    <Border Width="20" Height="20" CornerRadius="4" Margin="0,0,8,0"
-                            VerticalAlignment="Center">
-                        <Border.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#2DD4BF" Offset="0.0"/>
-                                <GradientStop Color="#2563EB" Offset="1.0"/>
-                            </LinearGradientBrush>
-                        </Border.Background>
-                        <TextBlock Text="FX" FontSize="8" FontWeight="Bold"
-                                   Foreground="#0F172A"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"/>
-                    </Border>
-                    <TextBlock FontSize="16" FontWeight="Bold"
-                               Foreground="{StaticResource TextPrimaryBrush}"
+                <!-- Window icon + title (left, draggable area) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                    <Image Source="/Assets/app-icon.png" Width="16" Height="16"
+                           VerticalAlignment="Center" Margin="0,0,8,0"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=Window}}"
+                               Foreground="{StaticResource TextSecondaryBrush}"
                                FontFamily="{StaticResource MainFont}"
-                               VerticalAlignment="Center">
-                        <Run Text="FX" Foreground="{StaticResource AccentBlueBrush}"/>
-                        <Run Text=" Trade Confirmation"/>
-                    </TextBlock>
+                               FontSize="12" VerticalAlignment="Center"/>
                 </StackPanel>
             </DockPanel>
         </Border>
 
-        <!-- === TOOLBAR === -->
+        <!-- === TITLE BAR === -->
         <Border Grid.Row="1" Background="{StaticResource BgDarkBrush}"
+                Padding="16,10" BorderBrush="{StaticResource BorderDefaultBrush}"
+                BorderThickness="0,0,0,1">
+            <TextBlock FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       FontFamily="{StaticResource MainFont}">
+                <Run Text="FX" Foreground="{StaticResource AccentBlueBrush}"/>
+                <Run Text=" Trade Confirmation"/>
+            </TextBlock>
+        </Border>
+
+        <!-- === TOOLBAR === -->
+        <Border Grid.Row="2" Background="{StaticResource BgDarkBrush}"
                 Padding="8,4" BorderBrush="{StaticResource BorderDefaultBrush}"
                 BorderThickness="0,0,0,1"
                 MaxWidth="{Binding ActualWidth, ElementName=GridScrollViewer}">
@@ -192,7 +151,7 @@
         </Border>
 
         <!-- === MAIN GRID AREA === -->
-        <ScrollViewer x:Name="GridScrollViewer" Grid.Row="2"
+        <ScrollViewer x:Name="GridScrollViewer" Grid.Row="3"
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Disabled"
                       Margin="0,0,0,8">
@@ -200,7 +159,7 @@
         </ScrollViewer>
 
         <!-- === TOTAL PREMIUM BAR === -->
-        <Border Grid.Row="3" Background="{StaticResource BgDarkBrush}"
+        <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
                 Padding="16,8" BorderBrush="{StaticResource BorderDefaultBrush}"
                 BorderThickness="0,1,0,0"
                 Visibility="{Binding HasMultipleLegs, Converter={StaticResource BoolToVis}}">
@@ -217,7 +176,7 @@
         </Border>
 
         <!-- === STATUS BAR === -->
-        <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
+        <Border Grid.Row="5" Background="{StaticResource BgDarkBrush}"
                 Padding="16,6" BorderBrush="{StaticResource BorderDefaultBrush}"
                 BorderThickness="0,1,0,0">
             <DockPanel>

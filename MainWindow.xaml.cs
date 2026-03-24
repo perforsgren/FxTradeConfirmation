@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Windows;
-using System.Windows.Input;
+using System.Windows.Shapes;
 using FxTradeConfirmation.ViewModels;
 
 namespace FxTradeConfirmation;
@@ -50,54 +50,38 @@ public partial class MainWindow : Window
             FitToContent();
     }
 
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount == 2)
-        {
-            MaximizeButton_Click(sender, e);
-        }
-        else
-        {
-            DragMove();
-        }
-    }
+    // --- Window chrome button handlers ---
+    private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
-    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
-    {
-        WindowState = WindowState.Minimized;
-    }
+    private void OnMaximizeRestore(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
-    private void MaximizeButton_Click(object sender, RoutedEventArgs e)
-    {
-        WindowState = WindowState == WindowState.Maximized
-            ? WindowState.Normal
-            : WindowState.Maximized;
-    }
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        Close();
-    }
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
 
     private void OnStateChanged(object? sender, EventArgs e)
     {
-        if (MaximizeIcon != null)
+        if (MaximizeIcon is Path icon)
         {
-            MaximizeIcon.Data = WindowState == WindowState.Maximized
-                ? System.Windows.Media.Geometry.Parse("M0,3 H7 V10 H0 Z M3,0 H10 V7 H7 M3,3 V0")
-                : System.Windows.Media.Geometry.Parse("M0,0 H10 V10 H0 Z");
+            icon.Data = WindowState == WindowState.Maximized
+                ? System.Windows.Media.Geometry.Parse("M 0 3 H 7 V 10 H 0 Z M 3 3 V 0 H 10 V 7 H 7")
+                : System.Windows.Media.Geometry.Parse("M 0 0 H 10 V 10 H 0 Z");
         }
     }
 
     /// <summary>
     /// Re-triggers SizeToContent so the window grows or shrinks to fit the current content.
-    /// Uses BeginInvoke so layout has time to measure the new content first.
+    /// Forces an invalidate + layout pass first so collapsed elements are fully measured at zero height.
     /// Clamps the result to the current screen's work area so the window never overflows.
     /// </summary>
     private void FitToContent()
     {
         Dispatcher.BeginInvoke(() =>
         {
+            // Force WPF to re-measure everything (collapsed rows → 0 height)
+            InvalidateMeasure();
+            InvalidateArrange();
+            UpdateLayout();
+
             SizeToContent = SizeToContent.WidthAndHeight;
 
             Dispatcher.BeginInvoke(() =>
