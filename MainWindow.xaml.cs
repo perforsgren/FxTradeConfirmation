@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
 using FxTradeConfirmation.ViewModels;
 
 namespace FxTradeConfirmation;
@@ -13,6 +14,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         Loaded += OnLoaded;
+        StateChanged += OnStateChanged;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -46,6 +48,45 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName is nameof(MainViewModel.ShowAdminRows) or nameof(MainViewModel.HasAnyHedge))
             FitToContent();
+    }
+
+    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount == 2)
+        {
+            MaximizeButton_Click(sender, e);
+        }
+        else
+        {
+            DragMove();
+        }
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void OnStateChanged(object? sender, EventArgs e)
+    {
+        if (MaximizeIcon != null)
+        {
+            MaximizeIcon.Data = WindowState == WindowState.Maximized
+                ? System.Windows.Media.Geometry.Parse("M0,3 H7 V10 H0 Z M3,0 H10 V7 H7 M3,3 V0")
+                : System.Windows.Media.Geometry.Parse("M0,0 H10 V10 H0 Z");
+        }
     }
 
     /// <summary>
