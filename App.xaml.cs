@@ -14,7 +14,20 @@ public partial class App : Application
         await dbService.InitializeAsync();   // ← credentials loaded BEFORE anything else
 
         var emailService = new EmailService();
-        var viewModel = new MainViewModel(dbService, emailService);
+
+        // Create the STP ingest service using the same connection string as DatabaseService
+        ITradeIngestService? ingestService = null;
+        try
+        {
+            var connectionString = FxSharedConfig.AppDbConfig.GetConnectionString("trade_stp");
+            ingestService = new TradeIngestService(connectionString);
+        }
+        catch
+        {
+            // Ingest service unavailable — Save will show an error but the app still starts
+        }
+
+        var viewModel = new MainViewModel(dbService, emailService, ingestService);
 
         var window = new MainWindow { DataContext = viewModel };
         window.Show();

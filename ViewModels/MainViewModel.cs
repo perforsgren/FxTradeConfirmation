@@ -13,11 +13,13 @@ public partial class MainViewModel : ObservableObject
 {
     public IDatabaseService DatabaseService { get; }
     private readonly IEmailService _emailService;
+    private readonly ITradeIngestService? _ingestService;
 
-    public MainViewModel(IDatabaseService databaseService, IEmailService emailService)
+    public MainViewModel(IDatabaseService databaseService, IEmailService emailService, ITradeIngestService? ingestService = null)
     {
         DatabaseService = databaseService;
         _emailService = emailService;
+        _ingestService = ingestService;
         ReferenceData = new ReferenceData();
 
         // Start with one leg
@@ -217,9 +219,43 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task SaveAsync()
     {
-        // TODO: Implementeras när ny tabellstruktur är klar
-        StatusMessage = "Save not yet implemented.";
-        await Task.CompletedTask;
+        if (_ingestService == null)
+        {
+            StatusMessage = "Save unavailable — STP ingest service not configured.";
+            return;
+        }
+
+        if (!ValidateAllLegs())
+        {
+            StatusMessage = "Please fill in all required fields.";
+            return;
+        }
+
+        StatusMessage = "Saving trades…";
+
+        try
+        {
+            var models = Legs.Select(l => l.ToModel()).ToList();
+            var results = await _ingestService.SubmitTradeAsync(models);
+
+            int successCount = results.Count(r => r.Success);
+            int failCount = results.Count(r => !r.Success);
+
+            if (failCount == 0)
+            {
+                var ids = string.Join(", ", results.Where(r => r.MessageInId.HasValue).Select(r => r.MessageInId));
+                StatusMessage = $"✓ Saved {successCount} trade(s) — MessageInIds: {ids}";
+            }
+            else
+            {
+                var errors = string.Join(" | ", results.Where(r => !r.Success).Select(r => r.ErrorMessage));
+                StatusMessage = $"⚠ {successCount} saved, {failCount} failed — {errors}";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Save failed: {ex.Message}";
+        }
     }
 
     [RelayCommand]

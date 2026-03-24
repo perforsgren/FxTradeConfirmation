@@ -18,6 +18,18 @@
     <Reference Include="FxSharedConfig">
       <HintPath>..\FxSharedConfig\bin\Debug\FxSharedConfig.dll</HintPath>
     </Reference>
+    <Reference Include="FxTradeHub.Contracts">
+      <HintPath>\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\libs\Shared\FxTradeHub.Contracts.dll</HintPath>
+    </Reference>
+    <Reference Include="FxTradeHub.Data.MySql">
+      <HintPath>\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\libs\Shared\FxTradeHub.Data.MySql.dll</HintPath>
+    </Reference>
+    <Reference Include="FxTradeHub.Domain">
+      <HintPath>\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\libs\Shared\FxTradeHub.Domain.dll</HintPath>
+    </Reference>
+    <Reference Include="FxTradeHub.Services">
+      <HintPath>\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\libs\Shared\FxTradeHub.Services.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>
