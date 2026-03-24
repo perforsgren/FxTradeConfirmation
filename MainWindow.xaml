@@ -6,7 +6,9 @@
         xmlns:views="clr-namespace:FxTradeConfirmation.Views"
         xmlns:conv="clr-namespace:FxTradeConfirmation.Converters"
         mc:Ignorable="d"
-        Title="FX Trade Confirmation" MinWidth="900" MinHeight="700"
+        Title="FX Trade Confirmation"
+        SizeToContent="WidthAndHeight"
+        MinWidth="600" MinHeight="400"
         WindowState="Normal" Background="{StaticResource BgDarkestBrush}">
 
     <Window.Resources>
@@ -17,7 +19,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -26,29 +28,19 @@
         <Border Grid.Row="0" Background="{StaticResource BgDarkBrush}"
                 Padding="16,10" BorderBrush="{StaticResource BorderDefaultBrush}"
                 BorderThickness="0,0,0,1">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Left" FontSize="16" FontWeight="Bold"
-                           Foreground="{StaticResource TextPrimaryBrush}"
-                           FontFamily="{StaticResource MainFont}">
-                    <Run Text="FX" Foreground="{StaticResource AccentBlueBrush}"/>
-                    <Run Text=" Trade Confirmation"/>
-                </TextBlock>
-
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                            HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
-                    <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToVis},
-                                   FallbackValue='Disconnected'}"
-                               Foreground="{StaticResource TextMutedBrush}" FontSize="11"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
-            </DockPanel>
+            <TextBlock FontSize="16" FontWeight="Bold"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       FontFamily="{StaticResource MainFont}">
+                <Run Text="FX" Foreground="{StaticResource AccentBlueBrush}"/>
+                <Run Text=" Trade Confirmation"/>
+            </TextBlock>
         </Border>
 
         <!-- === TOOLBAR === -->
         <Border Grid.Row="1" Background="{StaticResource BgDarkBrush}"
                 Padding="8,4" BorderBrush="{StaticResource BorderDefaultBrush}"
-                BorderThickness="0,0,0,1">
+                BorderThickness="0,0,0,1"
+                MaxWidth="{Binding ActualWidth, ElementName=GridScrollViewer}">
             <DockPanel>
                 <!-- Right-aligned primary actions -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
@@ -109,8 +101,10 @@
         </Border>
 
         <!-- === MAIN GRID AREA === -->
-        <ScrollViewer Grid.Row="2" HorizontalScrollBarVisibility="Auto"
-                      VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="GridScrollViewer" Grid.Row="2"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled"
+                      Margin="0,0,0,8">
             <views:TradeGridControl DataContext="{Binding}"/>
         </ScrollViewer>
 
@@ -135,8 +129,19 @@
         <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
                 Padding="16,6" BorderBrush="{StaticResource BorderDefaultBrush}"
                 BorderThickness="0,1,0,0">
-            <TextBlock Text="{Binding StatusMessage}"
-                       Foreground="{StaticResource TextMutedBrush}" FontSize="11"/>
+            <DockPanel>
+                <TextBlock Text="{Binding StatusMessage}"
+                           Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                           VerticalAlignment="Center"/>
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
+                    <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToConnectionText}}"
+                               Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+            </DockPanel>
         </Border>
     </Grid>
 </Window>

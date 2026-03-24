@@ -12,6 +12,7 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
             <converters:EnumToBoolConverter x:Key="EnumToBool"/>
+            <converters:BoolToConnectionTextConverter x:Key="BoolToConnectionText"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

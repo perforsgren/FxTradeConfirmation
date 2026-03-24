@@ -229,8 +229,7 @@ public partial class TradeGridControl : UserControl
             UpdateAdminVisibility();
     }
 
-    private static int LegValCol(int legIndex) => 3 + legIndex * 2;
-    private static int LegTogCol(int legIndex) => 4 + legIndex * 2;
+    private static int LegValCol(int legIndex) => 3 + legIndex;
 
     // ================================================================
     //  Comma → Dot real-time replacement for numeric TextBoxes
@@ -303,7 +302,6 @@ public partial class TradeGridControl : UserControl
         for (int i = 0; i < legCount; i++)
         {
             RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
-            RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         }
 
         int totalCols = RootGrid.ColumnDefinitions.Count;
@@ -392,7 +390,6 @@ public partial class TradeGridControl : UserControl
 
             Grid.SetRow(headerPanel, RowHeader);
             Grid.SetColumn(headerPanel, LegValCol(i));
-            Grid.SetColumnSpan(headerPanel, 2);
             RootGrid.Children.Add(headerPanel);
         }
 
