@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using FxTradeConfirmation.Models;
 using FxTradeConfirmation.ViewModels;
 
@@ -90,6 +91,19 @@ public partial class TradeGridControl : UserControl
     private ComboBox? _distCounterpart;
     private ComboBox? _distCcyPair;
     private ComboBox? _distCut;
+
+    // Solving visual state — tracked for cleanup
+    private Border? _solvingDimOverlay;
+    private Border? _solvingTargetHighlight;
+    private Border? _solvingTotalHighlight;
+    private Storyboard? _solvingPulseStoryboard;
+
+    // Track total premium summary controls for solve highlighting
+    private TextBox? _totalPremiumStyleTb;
+    private TextBox? _totalPremiumAmountTb;
+
+    // Track per-leg premium TextBoxes: [legIndex] -> (premiumTb, premiumAmountTb)
+    private readonly List<(TextBox premiumTb, TextBox premiumAmountTb)> _legPremiumControls = [];
 
     public TradeGridControl()
     {
@@ -180,24 +194,31 @@ public partial class TradeGridControl : UserControl
     }
 
     /// <summary>
-    /// When solve mode starts, immediately show the SolvingDialog.
+    /// When solve mode starts, apply visual highlights and show the SolvingDialog.
     /// </summary>
-    private void OnSolvingDialogRequested(bool isByAmount, string unitDisplay)
+    private void OnSolvingDialogRequested(bool isByAmount, string unitDisplay, string contextLabel)
     {
         Dispatcher.BeginInvoke(() =>
         {
+            // Apply visual solve-mode effects before opening dialog
+            ApplySolvingVisuals(isByAmount);
+
             var ownerWindow = Window.GetWindow(this);
-            var dialog = new SolvingDialog(isByAmount, unitDisplay) { Owner = ownerWindow };
+            var dialog = new SolvingDialog(isByAmount, unitDisplay, contextLabel) { Owner = ownerWindow };
 
             // Wire up the solve callback so validation errors stay in the dialog
             dialog.SolveCallback = (target, payReceive) => _vm?.SolvePremium(target, payReceive);
 
             if (dialog.ShowDialog() == true)
             {
-                // Solve already applied inside the callback — nothing more to do.
+                // Solve already applied inside the callback — visuals already cleaned by FinishSolving.
+                // But FinishSolving is called inside SolvePremium, so cleanup might already be done.
+                // Ensure cleanup in case it wasn't:
+                RemoveSolvingVisuals();
             }
             else
             {
+                RemoveSolvingVisuals();
                 _vm?.CancelSolvingCommand.Execute(null);
             }
         }, System.Windows.Threading.DispatcherPriority.Input);
@@ -277,6 +298,127 @@ public partial class TradeGridControl : UserControl
     }
 
     // ================================================================
+    //  SOLVING VISUAL EFFECTS
+    // ================================================================
+
+    /// <summary>
+    /// Applies all 5 solve-mode visual effects:
+    /// 1. '?' stays in cell (already handled by ViewModel)
+    /// 2. Amber border on the solving target cell
+    /// 3. Context label in dialog (handled by SolvingDialog constructor)
+    /// 4. Pulsing amber border on total premium cells
+    /// 5. Dim overlay on all other cells
+    /// </summary>
+    private void ApplySolvingVisuals(bool isByAmount)
+    {
+        if (_vm == null) return;
+
+        int solvingLegIndex = -1;
+        for (int i = 0; i < _vm.Legs.Count; i++)
+        {
+            if (_vm.Legs[i].IsSolvingTarget)
+            {
+                solvingLegIndex = i;
+                break;
+            }
+        }
+        if (solvingLegIndex < 0) return;
+
+        var amberBrush = FindBrush("SolvingAmberBrush");
+        var amberDimBrush = FindBrush("SolvingAmberDimBrush");
+        int totalCols = RootGrid.ColumnDefinitions.Count;
+
+        // --- 5. Dim overlay covering the entire grid ---
+        _solvingDimOverlay = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x99, 0x0A, 0x0E, 0x1A)),
+            IsHitTestVisible = false
+        };
+        Grid.SetRow(_solvingDimOverlay, 0);
+        Grid.SetColumn(_solvingDimOverlay, 0);
+        Grid.SetRowSpan(_solvingDimOverlay, TotalRows);
+        Grid.SetColumnSpan(_solvingDimOverlay, totalCols);
+        Panel.SetZIndex(_solvingDimOverlay, 50);
+        RootGrid.Children.Add(_solvingDimOverlay);
+
+        // --- 2. Amber highlight border on the solving target cell ---
+        int targetRow = isByAmount ? RowPremiumAmount : RowPremium;
+        int targetCol = LegValCol(solvingLegIndex);
+        _solvingTargetHighlight = new Border
+        {
+            BorderBrush = amberBrush,
+            BorderThickness = new Thickness(2),
+            Background = amberDimBrush,
+            IsHitTestVisible = false
+        };
+        Grid.SetRow(_solvingTargetHighlight, targetRow);
+        Grid.SetColumn(_solvingTargetHighlight, targetCol);
+        Panel.SetZIndex(_solvingTargetHighlight, 60);
+        RootGrid.Children.Add(_solvingTargetHighlight);
+
+        // --- 4. Pulsing amber border on total premium summary cells ---
+        _solvingTotalHighlight = new Border
+        {
+            BorderBrush = amberBrush,
+            BorderThickness = new Thickness(2),
+            IsHitTestVisible = false,
+            Opacity = 1.0
+        };
+        // Span both Premium and Premium Amount rows in the distributor column
+        Grid.SetRow(_solvingTotalHighlight, RowPremium);
+        Grid.SetColumn(_solvingTotalHighlight, ColDistInput);
+        Grid.SetRowSpan(_solvingTotalHighlight, 2);
+        Panel.SetZIndex(_solvingTotalHighlight, 60);
+        RootGrid.Children.Add(_solvingTotalHighlight);
+
+        // Create pulsing animation on the total highlight border
+        var pulseAnimation = new DoubleAnimation
+        {
+            From = 1.0,
+            To = 0.3,
+            Duration = TimeSpan.FromMilliseconds(800),
+            AutoReverse = true,
+            RepeatBehavior = RepeatBehavior.Forever,
+            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+        };
+        _solvingPulseStoryboard = new Storyboard();
+        _solvingPulseStoryboard.Children.Add(pulseAnimation);
+        Storyboard.SetTarget(pulseAnimation, _solvingTotalHighlight);
+        Storyboard.SetTargetProperty(pulseAnimation, new PropertyPath(OpacityProperty));
+        _solvingPulseStoryboard.Begin();
+    }
+
+    /// <summary>
+    /// Removes all solve-mode visual effects, restoring the grid to normal.
+    /// </summary>
+    private void RemoveSolvingVisuals()
+    {
+        if (_solvingPulseStoryboard != null)
+        {
+            _solvingPulseStoryboard.Stop();
+            _solvingPulseStoryboard = null;
+        }
+
+        if (_solvingDimOverlay != null)
+        {
+            RootGrid.Children.Remove(_solvingDimOverlay);
+            _solvingDimOverlay = null;
+        }
+
+        if (_solvingTargetHighlight != null)
+        {
+            RootGrid.Children.Remove(_solvingTargetHighlight);
+            _solvingTargetHighlight = null;
+        }
+
+        if (_solvingTotalHighlight != null)
+        {
+            RootGrid.Children.Remove(_solvingTotalHighlight);
+            _solvingTotalHighlight = null;
+        }
+    }
+
+    // ================================================================
     //  GRID REBUILD
     // ================================================================
     private void RebuildGrid()
@@ -289,6 +431,13 @@ public partial class TradeGridControl : UserControl
         _hedgeDetailElements.Clear();
         _adminElements.Clear();
         _hedgeAdminElements.Clear();
+        _legPremiumControls.Clear();
+
+        // Clear any leftover solving visuals
+        _solvingDimOverlay = null;
+        _solvingTargetHighlight = null;
+        _solvingTotalHighlight = null;
+        _solvingPulseStoryboard = null;
 
         int legCount = _vm.Legs.Count;
 
@@ -580,7 +729,7 @@ public partial class TradeGridControl : UserControl
         // --- Premium summary in distributor column (read-only totals) ---
         var brushConverter = new BrushKeyConverter(this);
 
-        var totalPremiumStyleTb = new TextBox
+        _totalPremiumStyleTb = new TextBox
         {
             Style = FindStyle<TextBox>("TradingTextBox"),
             IsReadOnly = true,
@@ -588,17 +737,17 @@ public partial class TradeGridControl : UserControl
             HorizontalContentAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(2, 1, 2, 1)
         };
-        totalPremiumStyleTb.SetBinding(TextBox.TextProperty,
+        _totalPremiumStyleTb.SetBinding(TextBox.TextProperty,
             new Binding(nameof(MainViewModel.TotalPremiumStyleDisplay)) { Source = _vm });
-        totalPremiumStyleTb.SetBinding(TextBox.ForegroundProperty,
+        _totalPremiumStyleTb.SetBinding(TextBox.ForegroundProperty,
             new Binding(nameof(MainViewModel.TotalPremiumBrushKey))
             {
                 Source = _vm,
                 Converter = brushConverter
             });
-        AddCell(RowPremium, ColDistInput, totalPremiumStyleTb);
+        AddCell(RowPremium, ColDistInput, _totalPremiumStyleTb);
 
-        var totalPremiumAmountTb = new TextBox
+        _totalPremiumAmountTb = new TextBox
         {
             Style = FindStyle<TextBox>("TradingTextBox"),
             IsReadOnly = true,
@@ -606,15 +755,15 @@ public partial class TradeGridControl : UserControl
             HorizontalContentAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(2, 1, 2, 1)
         };
-        totalPremiumAmountTb.SetBinding(TextBox.TextProperty,
+        _totalPremiumAmountTb.SetBinding(TextBox.TextProperty,
             new Binding(nameof(MainViewModel.TotalPremiumAmountDisplay)) { Source = _vm });
-        totalPremiumAmountTb.SetBinding(TextBox.ForegroundProperty,
+        _totalPremiumAmountTb.SetBinding(TextBox.ForegroundProperty,
             new Binding(nameof(MainViewModel.TotalPremiumBrushKey))
             {
                 Source = _vm,
                 Converter = brushConverter
             });
-        AddCell(RowPremiumAmount, ColDistInput, totalPremiumAmountTb);
+        AddCell(RowPremiumAmount, ColDistInput, _totalPremiumAmountTb);
 
         // Leg columns
         for (int i = 0; i < legCount; i++)
@@ -709,6 +858,9 @@ public partial class TradeGridControl : UserControl
                 });
             AttachNumericHandlers(premAmtTb, leg.ApplyPremiumAmountInput);
             AddCell(RowPremiumAmount, vc, premAmtTb);
+
+            // Track premium controls for solve highlighting
+            _legPremiumControls.Add((premiumTb, premAmtTb));
 
             // Premium Date — inline type badge suffix
             AddCell(RowPremiumDate, vc, CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumDate),

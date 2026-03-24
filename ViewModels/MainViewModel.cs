@@ -80,9 +80,9 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// Raised when solve mode starts and the view should show the SolvingDialog.
-    /// Parameters: isByAmount, premiumStyleDisplay (e.g. "SEK pips" or "SEK").
+    /// Parameters: isByAmount, unitDisplay (e.g. "SEK pips"), contextLabel (e.g. "Leg 2 – Call – Premium").
     /// </summary>
-    public event Action<bool, string>? SolvingDialogRequested;
+    public event Action<bool, string, string>? SolvingDialogRequested;
 
     // --- Initialization ---
 
@@ -360,6 +360,10 @@ public partial class MainViewModel : ObservableObject
                     leg.Counterpart = value;
                     break;
                 case nameof(TradeLegViewModel.CurrencyPair):
+                    // Propagate Leg 1's ExecutionTime BEFORE setting CurrencyPair,
+                    // so OnCurrencyPairChanged on Leg 2+ doesn't generate its own timestamp.
+                    var leg1 = Legs[0];
+                    leg.ExecutionTime = leg1.ExecutionTime;
                     leg.CurrencyPair = value;
                     break;
             }
@@ -408,7 +412,11 @@ public partial class MainViewModel : ObservableObject
             ? $"Premium Amount [{solvingLeg.PremiumCurrency}]"
             : $"Premium [{solvingLeg.PremiumStyleDisplay}]";
 
-        SolvingDialogRequested?.Invoke(isByAmount, unitDisplay);
+        // Build context label: "Leg N – Call/Put – Premium / Premium Amount"
+        string fieldName = isByAmount ? "Premium Amount" : "Premium";
+        string contextLabel = $"Leg {solvingLeg.LegNumber} – {solvingLeg.CallPut} – {fieldName}";
+
+        SolvingDialogRequested?.Invoke(isByAmount, unitDisplay, contextLabel);
     }
 
     /// <summary>
@@ -521,6 +529,30 @@ public partial class MainViewModel : ObservableObject
             var leg1 = Legs[0];
             leg.Counterpart = leg1.Counterpart;
             leg.CurrencyPair = leg1.CurrencyPair;
+
+            // Inherit admin defaults directly from Leg 1 so the values are set
+            // BEFORE Legs.Add triggers RebuildGrid and the ComboBoxes are created.
+            leg.Trader = leg1.Trader;
+            leg.Sales = leg1.Sales;
+            leg.ReportingEntity = leg1.ReportingEntity;
+            leg.InvestmentDecisionID = leg1.InvestmentDecisionID;
+            leg.ExecutionTime = leg1.ExecutionTime;
+            leg.Mic = leg1.Mic;
+            leg.Broker = leg1.Broker;
+        }
+        else if (ReferenceData.UserIdToFullName.Count > 0)
+        {
+            // First leg created after reference data is loaded (e.g. ClearAll)
+            var currentUser = Environment.UserName.ToUpperInvariant();
+
+            if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
+                && !string.IsNullOrEmpty(mx3Id))
+                leg.Trader = mx3Id;
+
+            // Force trigger to populate Sales + ReportingEntity
+            var currentId = leg.InvestmentDecisionID;
+            leg.InvestmentDecisionID = string.Empty;
+            leg.InvestmentDecisionID = currentId;
         }
 
         Legs.Add(leg);

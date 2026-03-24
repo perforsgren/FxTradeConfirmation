@@ -232,10 +232,15 @@ public partial class TradeLegViewModel : ObservableObject
             if (_lastValidHedgeRate.HasValue)
                 HedgeRateText = FormatStrike(_lastValidHedgeRate.Value);
 
-            // Refresh ExecutionTime when currency pair changes
-            var newTime = DateTime.UtcNow.ToString(ExecutionTimeFormat);
-            _lastValidExecutionTime = newTime;
-            ExecutionTime = newTime;
+            // Refresh ExecutionTime when currency pair changes.
+            // Only generate a new timestamp on Leg 1 — other legs receive it
+            // via PropagateFromLeg1 so all legs share the exact same value.
+            if (IsFirstLeg)
+            {
+                var newTime = DateTime.UtcNow.ToString(ExecutionTimeFormat);
+                _lastValidExecutionTime = newTime;
+                ExecutionTime = newTime;
+            }
         }
 
         if (IsFirstLeg)
@@ -952,6 +957,11 @@ public partial class TradeLegViewModel : ObservableObject
         PremiumDate = source.PremiumDate;
         PortfolioMX3 = source.PortfolioMX3;
         Trader = source.Trader;
+        Sales = source.Sales;
+        ReportingEntity = source.ReportingEntity;
+        InvestmentDecisionID = source.InvestmentDecisionID;
+        ExecutionTime = source.ExecutionTime;
+        _lastValidExecutionTime = source._lastValidExecutionTime;
         Mic = source.Mic;
         Broker = source.Broker;
         _cachedSpotDate = source._cachedSpotDate;

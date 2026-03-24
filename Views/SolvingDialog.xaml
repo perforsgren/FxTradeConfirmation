@@ -23,6 +23,13 @@
                            FontSize="14" VerticalAlignment="Center"/>
             </DockPanel>
 
+            <!-- Context label, e.g. "Leg 2 – Call – Premium" -->
+            <TextBlock x:Name="ContextLabel"
+                       FontSize="12" FontFamily="{StaticResource MonoFont}"
+                       Foreground="{StaticResource SolvingAmberBrush}"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,2"/>
+
             <!-- Unit subtitle, e.g. "[SEK pips]" -->
             <TextBlock x:Name="UnitLabel"
                        FontSize="11" FontFamily="{StaticResource MonoFont}"

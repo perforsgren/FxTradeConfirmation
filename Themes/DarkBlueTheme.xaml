@@ -30,6 +30,8 @@
     <Color x:Key="WarningAmber">#FFF59E0B</Color>
     <Color x:Key="SolvingGreen">#FF22C55E</Color>
     <Color x:Key="NeutralGray">#FF94A3B8</Color>
+    <Color x:Key="SolvingAmber">#FFFBBF24</Color>
+    <Color x:Key="SolvingAmberDim">#33FBBF24</Color>
 
     <!-- Text -->
     <Color x:Key="TextPrimary">#FFE2E8F0</Color>
@@ -69,6 +71,8 @@
     <SolidColorBrush x:Key="NegativeRedDarkBrush" Color="{StaticResource NegativeRedDark}"/>
     <SolidColorBrush x:Key="WarningAmberBrush" Color="{StaticResource WarningAmber}"/>
     <SolidColorBrush x:Key="SolvingGreenBrush" Color="{StaticResource SolvingGreen}"/>
+    <SolidColorBrush x:Key="SolvingAmberBrush" Color="{StaticResource SolvingAmber}"/>
+    <SolidColorBrush x:Key="SolvingAmberDimBrush" Color="{StaticResource SolvingAmberDim}"/>
 
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>

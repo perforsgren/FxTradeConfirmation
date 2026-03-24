@@ -16,16 +16,20 @@ public partial class SolvingDialog : Window
     public Func<decimal, string, string?>? SolveCallback { get; set; }
 
     /// <summary>
-    /// Creates a SolvingDialog with a contextual title and unit label.
+    /// Creates a SolvingDialog with a contextual title, unit label, and solving context.
     /// </summary>
     /// <param name="isByAmount">True when solving for Premium Amount, false for Premium.</param>
     /// <param name="unitDisplay">Display string for the unit, e.g. "SEK pips" or "SEK".</param>
-    public SolvingDialog(bool isByAmount, string unitDisplay)
+    /// <param name="contextLabel">Context label, e.g. "Leg 2 – Call – Premium".</param>
+    public SolvingDialog(bool isByAmount, string unitDisplay, string contextLabel = "")
     {
         InitializeComponent();
 
         TitleLabel.Text = isByAmount ? "Solve Premium Amount" : "Solve Premium";
         UnitLabel.Text = unitDisplay;
+        ContextLabel.Text = contextLabel;
+        if (string.IsNullOrEmpty(contextLabel))
+            ContextLabel.Visibility = Visibility.Collapsed;
 
         Loaded += (_, _) =>
         {
