@@ -222,6 +222,26 @@
 
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                 HorizontalAlignment="Right" VerticalAlignment="Center">
+
+                        <!-- Clipboard watcher toggle -->
+                        <TextBlock Cursor="Hand"
+                                   FontSize="11" FontFamily="{StaticResource MonoFont}"
+                                   VerticalAlignment="Center" Margin="0,0,12,0"
+                                   MouseLeftButtonUp="OnClipboardWatcherToggleClick">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="● CLIP OFF"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ClipboardAutoEnabled}" Value="True">
+                                            <Setter Property="Text" Value="● CLIP ON"/>
+                                            <Setter Property="Foreground" Value="{StaticResource SolvingAmberBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
                         <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
                         <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToConnectionText}}"
                                    Foreground="{StaticResource TextMutedBrush}" FontSize="11"
@@ -229,6 +249,7 @@
                     </StackPanel>
                 </DockPanel>
             </Border>
+            
         </Grid>
     </Border>
 </Window>

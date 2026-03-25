@@ -1,6 +1,7 @@
 ﻿using System.Windows;
 using FxTradeConfirmation.Services;
 using FxTradeConfirmation.ViewModels;
+using System.IO;
 
 namespace FxTradeConfirmation;
 
@@ -22,10 +23,7 @@ public partial class App : Application
             var connectionString = FxSharedConfig.AppDbConfig.GetConnectionString("trade_stp");
             ingestService = new TradeIngestService(connectionString);
         }
-        catch
-        {
-            // Ingest service unavailable — Save will show an error but the app still starts
-        }
+        catch { }
 
         // Create the recent trade service for Open Recent functionality
         IRecentTradeService? recentTradeService = null;
@@ -34,12 +32,23 @@ public partial class App : Application
             const string recentTradesPath = @"\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\FxTrades";
             recentTradeService = new RecentTradeService(recentTradesPath);
         }
-        catch
-        {
-            // Recent trade service unavailable — Open Recent will show an error
-        }
+        catch { }
 
-        var viewModel = new MainViewModel(dbService, emailService, ingestService, recentTradeService);
+        // Clipboard watcher — restricted to Bloomberg IB Manager only
+        var clipboardWatcher = new ClipboardWatcher
+        {
+            SourceFilter = ["bplus64", "bplus"],
+            WindowTitleFilter = ["IB Manager"]
+        };
+
+        const string settingsRoot = @"\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\Settings\FxTradeConfirmation";
+        var optionQueryFilter = new OptionQueryFilter(Path.Combine(settingsRoot, "Keywords.json"));
+        var regexParser       = new OvmlBuilderAP3();
+        var aiParser          = new OvmlBuilder(Path.Combine(settingsRoot, "Prompt.txt"));
+
+        var viewModel = new MainViewModel(
+            dbService, emailService, ingestService, recentTradeService,
+            clipboardWatcher, optionQueryFilter, regexParser, aiParser);
 
         var window = new MainWindow { DataContext = viewModel };
         window.Show();

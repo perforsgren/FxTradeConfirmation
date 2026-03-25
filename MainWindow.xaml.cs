@@ -1,8 +1,11 @@
-﻿using System.ComponentModel;
+﻿using FxTradeConfirmation.Models;
+using FxTradeConfirmation.Services;
+using FxTradeConfirmation.ViewModels;
+using FxTradeConfirmation.Views;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using FxTradeConfirmation.ViewModels;
 
 namespace FxTradeConfirmation;
 
@@ -29,6 +32,7 @@ public partial class MainWindow : Window
         {
             _vm.Legs.CollectionChanged -= OnLegsCollectionChanged;
             _vm.PropertyChanged -= OnVmPropertyChanged;
+            _vm.ClipboardCaptureDialogRequested -= OnClipboardCaptureDialogRequested;
         }
 
         _vm = e.NewValue as MainViewModel;
@@ -37,6 +41,55 @@ public partial class MainWindow : Window
         {
             _vm.Legs.CollectionChanged += OnLegsCollectionChanged;
             _vm.PropertyChanged += OnVmPropertyChanged;
+            _vm.ClipboardCaptureDialogRequested += OnClipboardCaptureDialogRequested;
+        }
+    }
+
+    private void OnClipboardCaptureDialogRequested(
+        ClipboardChangedEventArgs e,
+        string ovml,
+        IReadOnlyList<OvmlLeg> legs,
+        bool parsedByAi,
+        Action completed)
+    {
+        try
+        {
+            var dialog = new ClipboardCaptureDialog(e, ovml, legs, parsedByAi) { Owner = this };
+            dialog.ShowDialog();
+
+            var vm = (MainViewModel)DataContext;
+
+            var finalLegs = dialog.ParsedLegs
+                .Select((row, i) => row.ToOvmlLeg(legs[i]))
+                .ToList();
+
+            switch (dialog.Result)
+            {
+                case ClipboardCaptureAction.PopulateUi:
+                    vm.PopulateLegsFromParsed(finalLegs);
+                    vm.StatusMessage = $"✓ Form filled — {finalLegs.Count} leg(s) via {(parsedByAi ? "AI" : "regex")}";
+                    break;
+
+                case ClipboardCaptureAction.OpenInBloomberg:
+                    vm.StatusMessage = "Bloomberg pricer — not yet implemented";
+                    break;
+
+                case ClipboardCaptureAction.Both:
+                    vm.PopulateLegsFromParsed(finalLegs);
+                    vm.StatusMessage = $"✓ Form filled — Bloomberg pricer pending ({finalLegs.Count} leg(s))";
+                    break;
+
+                case ClipboardCaptureAction.Reject:
+                    vm.StatusMessage = "Option request rejected.";
+                    break;
+            }
+
+            // Allow the same text to be captured again if the user copies it once more
+            vm.ClipboardWatcher?.ResetLastSignature();
+        }
+        finally
+        {
+            completed();
         }
     }
 
@@ -142,5 +195,10 @@ public partial class MainWindow : Window
                 SizeToContent = SizeToContent.Manual;
             }, System.Windows.Threading.DispatcherPriority.Loaded);
         }, System.Windows.Threading.DispatcherPriority.Background);
+    }
+
+    private void OnClipboardWatcherToggleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _vm?.ToggleClipboardWatcherCommand.Execute(null);
     }
 }

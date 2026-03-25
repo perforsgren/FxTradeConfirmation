@@ -1053,4 +1053,46 @@ public partial class TradeLegViewModel : ObservableObject
         HedgeISIN = model.HedgeISIN;
         BookCalypso = model.BookCalypso;
     }
+
+    /// <summary>
+    /// Populates this leg from a parsed <see cref="OvmlLeg"/>.
+    /// Only fields that the parser can reliably produce are set;
+    /// admin fields (Trader, Sales, etc.) are left at their defaults.
+    /// </summary>
+    public void ApplyFromOvmlLeg(OvmlLeg leg)
+    {
+        // Currency pair
+        if (!string.IsNullOrWhiteSpace(leg.Pair) &&
+            !leg.Pair.Equals("UNKNOWN", StringComparison.OrdinalIgnoreCase))
+            CurrencyPair = leg.Pair.ToUpperInvariant();
+
+        // Buy / Sell
+        BuySell = leg.BuySell.StartsWith("S", StringComparison.OrdinalIgnoreCase)
+            ? BuySell.Sell
+            : BuySell.Buy;
+
+        // Call / Put
+        CallPut = leg.PutCall.StartsWith("P", StringComparison.OrdinalIgnoreCase)
+            ? CallPut.Put
+            : CallPut.Call;
+
+        // Strike — "ATM" or numeric
+        if (!string.IsNullOrWhiteSpace(leg.Strike))
+            ApplyStrikeInput(leg.Strike.Equals("ATM", StringComparison.OrdinalIgnoreCase)
+                ? string.Empty   // leave blank — no numeric strike for ATM
+                : leg.Strike);
+
+        // Notional — stored as absolute (e.g. 25_000_000); NotionalParser.Format handles display
+        if (leg.Notional > 0)
+        {
+            var notionalDecimal = (decimal)leg.Notional;
+            _lastValidNotional = notionalDecimal;
+            _userNotionalDecimals = null;
+            NotionalText = NotionalParser.Format(notionalDecimal, null);
+        }
+
+        // Expiry — try to parse as date first, then fall back to tenor
+        if (!string.IsNullOrWhiteSpace(leg.Expiry))
+            ApplyExpiryInput(leg.Expiry);
+    }
 }

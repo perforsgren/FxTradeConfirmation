@@ -16,14 +16,45 @@ public partial class MainViewModel : ObservableObject
     private readonly IEmailService _emailService;
     private readonly ITradeIngestService? _ingestService;
     private readonly IRecentTradeService? _recentTradeService;
+    private readonly IClipboardWatcher? _clipboardWatcher;
+    private readonly IOptionQueryFilter? _optionQueryFilter;
+    private readonly IOvmlParser _regexParser;
+    private readonly IOvmlParser _aiParser;
 
-    public MainViewModel(IDatabaseService databaseService, IEmailService emailService, ITradeIngestService? ingestService = null, IRecentTradeService? recentTradeService = null)
+    /// <summary>
+    /// When true, clipboard events from our own paste operations are suppressed.
+    /// </summary>
+    private bool _suppressClipboardEvents;
+
+    /// <summary>
+    /// Reentrance guard: 1 = flow in progress, 0 = idle.
+    /// Ensures only one clipboard parse+dialog cycle runs at a time.
+    /// </summary>
+    private int _clipboardFlowActive;
+
+    public MainViewModel(
+        IDatabaseService databaseService,
+        IEmailService emailService,
+        ITradeIngestService? ingestService = null,
+        IRecentTradeService? recentTradeService = null,
+        IClipboardWatcher? clipboardWatcher = null,
+        IOptionQueryFilter? optionQueryFilter = null,
+        IOvmlParser? regexParser = null,
+        IOvmlParser? aiParser = null)
     {
-        DatabaseService = databaseService;
-        _emailService = emailService;
-        _ingestService = ingestService;
-        _recentTradeService = recentTradeService;
+        DatabaseService      = databaseService;
+        _emailService        = emailService;
+        _ingestService       = ingestService;
+        _recentTradeService  = recentTradeService;
+        _clipboardWatcher    = clipboardWatcher;
+        _optionQueryFilter   = optionQueryFilter;
+        _regexParser         = regexParser ?? new OvmlBuilderAP3();
+        _aiParser            = aiParser    ?? new OvmlBuilder(
+            promptFilePath: @"\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\Settings\FxTradeConfirmation\Prompt.txt");
         ReferenceData = new ReferenceData();
+
+        if (_clipboardWatcher != null)
+            _clipboardWatcher.ClipboardChanged += OnClipboardChanged;
 
         // Start with one leg
         AddLegInternal();
@@ -57,6 +88,9 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>Tooltip text listing the missing required fields, or empty when all fields are valid.</summary>
     [ObservableProperty] private string _saveValidationTooltip = string.Empty;
+
+    /// <summary>Whether the clipboard watcher auto-capture is enabled.</summary>
+    [ObservableProperty] private bool _clipboardAutoEnabled;
 
     /// <summary>
     /// Brush resource key for total premium color:
@@ -105,6 +139,100 @@ public partial class MainViewModel : ObservableObject
     /// The IRecentTradeService is passed so the dialog can load data.
     /// </summary>
     public event Action<IRecentTradeService>? OpenRecentDialogRequested;
+
+    /// <summary>
+    /// Raised when a clipboard option request has been parsed and is ready for user review.
+    /// Parameters: event args, ovml string, parsed legs, was-ai-parsed flag, completed callback.
+    /// The view MUST invoke the completed callback when the dialog closes.
+    /// </summary>
+    public event Action<ClipboardChangedEventArgs, string, IReadOnlyList<OvmlLeg>, bool, Action>? ClipboardCaptureDialogRequested;
+
+    // --- Clipboard Watcher ---
+
+    [RelayCommand]
+    private void ToggleClipboardWatcher()
+    {
+        if (_clipboardWatcher == null)
+        {
+            StatusMessage = "Clipboard watcher not available.";
+            return;
+        }
+
+        if (ClipboardAutoEnabled)
+        {
+            _clipboardWatcher.Stop();
+            ClipboardAutoEnabled = false;
+            StatusMessage = "Clipboard watcher stopped.";
+        }
+        else
+        {
+            _clipboardWatcher.Start();
+            ClipboardAutoEnabled = true;
+            StatusMessage = "Clipboard watcher active — listening for copies…";
+        }
+    }
+
+    private void OnClipboardChanged(object? sender, ClipboardChangedEventArgs e)
+    {
+        if (_suppressClipboardEvents || !ClipboardAutoEnabled)
+            return;
+
+        if (string.IsNullOrWhiteSpace(e.Text))
+            return;
+
+        if (_optionQueryFilter != null && !_optionQueryFilter.IsOptionQuery(e.Text))
+            return;
+
+        // Only one parse+dialog cycle at a time
+        if (Interlocked.CompareExchange(ref _clipboardFlowActive, 1, 0) != 0)
+            return;
+
+        // Run parsing off the UI thread so the watcher is never blocked
+        _ = Task.Run(() => RunClipboardFlowAsync(e));
+    }
+
+    private async Task RunClipboardFlowAsync(ClipboardChangedEventArgs e)
+    {
+        try
+        {
+            await SetStatusAsync("⏳ Parsing…");
+
+            bool usedAi = false;
+            bool success = _regexParser.TryParse(e.Text!, out var ovml, out var legs);
+
+            if (!success)
+            {
+                await SetStatusAsync("⏳ Regex failed — trying AI (GPT-4o)…");
+                success = _aiParser.TryParse(e.Text!, out ovml, out legs);
+                usedAi = success;
+            }
+
+            if (!success)
+            {
+                await SetStatusAsync("⚠ Option request detected — could not parse.");
+                return;
+            }
+
+            var method = usedAi ? "AI (GPT-4o)" : "regex";
+            await SetStatusAsync($"✓ Parsed via {method} — waiting for your action…");
+
+            // Use TCS to wait until the dialog is actually closed before releasing the lock
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+                ClipboardCaptureDialogRequested?.Invoke(e, ovml, legs, usedAi, () => tcs.TrySetResult(true)));
+
+            // Block until the view signals dialog closed
+            await tcs.Task;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _clipboardFlowActive, 0);
+        }
+    }
+
+    private Task SetStatusAsync(string message) =>
+        Application.Current.Dispatcher.InvokeAsync(() => StatusMessage = message).Task;
 
     // --- Initialization ---
 
@@ -260,7 +388,7 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        StatusMessage = "Saving trades…";
+        StatusMessage = "Saving trades…" ;
 
         try
         {
@@ -809,8 +937,50 @@ public partial class MainViewModel : ObservableObject
         _connectionTimer.Start();
     }
 
-    private async Task RefreshConnectionAsync()
+    public async Task RefreshConnectionAsync()
     {
         IsConnected = await DatabaseService.TestConnectionAsync();
     }
+
+    /// <summary>
+    /// Replaces all legs in the workspace with the parsed result from a clipboard capture.
+    /// Preserves admin defaults (Trader, Sales, etc.) from any existing Leg 1.
+    /// Must be called on the UI thread.
+    /// </summary>
+    public void PopulateLegsFromParsed(IReadOnlyList<OvmlLeg> legs)
+    {
+        CancelSolving();
+        Legs.Clear();
+
+        foreach (var ovmlLeg in legs)
+        {
+            var vm = new TradeLegViewModel(this, Legs.Count + 1);
+
+            // Inherit admin defaults from Leg 1 when adding subsequent legs
+            if (Legs.Count > 0)
+            {
+                var leg1 = Legs[0];
+                vm.Trader             = leg1.Trader;
+                vm.Sales              = leg1.Sales;
+                vm.ReportingEntity    = leg1.ReportingEntity;
+                vm.InvestmentDecisionID = leg1.InvestmentDecisionID;
+                vm.ExecutionTime      = leg1.ExecutionTime;
+                vm.Mic                = leg1.Mic;
+                vm.Broker             = leg1.Broker;
+                vm.BookCalypso        = leg1.BookCalypso;
+            }
+
+            vm.ApplyFromOvmlLeg(ovmlLeg);
+            Legs.Add(vm);
+        }
+
+        RenumberLegs();
+        OnPropertyChanged(nameof(HasMultipleLegs));
+        OnPropertyChanged(nameof(HasAnyHedge));
+        UpdateTotalPremium();
+        UpdateSaveValidation();
+    }
+
+    /// <summary>Exposed so the view can reset the deduplication signature after dialog interaction.</summary>
+    public IClipboardWatcher? ClipboardWatcher => _clipboardWatcher;
 }
