@@ -986,4 +986,71 @@ public partial class TradeLegViewModel : ObservableObject
         BookCalypso = source.BookCalypso;
         _cachedSpotDate = source._cachedSpotDate;
     }
+
+    public void LoadFromModel(TradeLeg model)
+    {
+        Counterpart = model.Counterpart;
+        CurrencyPair = model.CurrencyPair;
+        BuySell = model.BuySell;
+        CallPut = model.CallPut;
+
+        if (model.Strike.HasValue)
+            ApplyStrikeInput(model.Strike.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        if (model.ExpiryDate.HasValue)
+        {
+            ExpiryDate = model.ExpiryDate;
+            ExpiryText = model.ExpiryDate.Value.ToString("yyyy-MM-dd");
+        }
+
+        SettlementDate = model.SettlementDate;
+        Cut = model.Cut;
+
+        if (model.Notional.HasValue)
+            ApplyNotionalInput(model.Notional.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        NotionalCurrency = model.NotionalCurrency;
+        PremiumCurrency = model.PremiumCurrency;
+        PremiumStyle = model.PremiumStyle;
+        PremiumDateType = model.PremiumDateType;
+        PremiumDate = model.PremiumDate;
+
+        if (model.Premium.HasValue)
+            ApplyPremiumInput(model.Premium.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        if (model.PremiumAmount.HasValue)
+            ApplyPremiumAmountInput(model.PremiumAmount.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+
+        PortfolioMX3 = model.PortfolioMX3;
+        Trader = model.Trader;
+        ExecutionTime = model.ExecutionTime;
+        Mic = model.MIC;
+        Tvtic = model.TVTIC;
+        Isin = model.ISIN;
+        Sales = model.Sales;
+        InvestmentDecisionID = model.InvestmentDecisionID;
+        Broker = model.Broker;
+        ReportingEntity = model.ReportingEntity;
+
+        if (model.Margin.HasValue)
+            MarginText = model.Margin.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Hedge fields
+        Hedge = model.Hedge;
+        HedgeBuySell = model.HedgeBuySell;
+
+        if (model.HedgeNotional.HasValue)
+            ApplyHedgeNotionalInput(model.HedgeNotional.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        HedgeNotionalCurrency = model.HedgeNotionalCurrency;
+
+        if (model.HedgeRate.HasValue)
+            ApplyHedgeRateInput(model.HedgeRate.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        HedgeSettlementDate = model.HedgeSettlementDate;
+        HedgeTVTIC = model.HedgeTVTIC;
+        HedgeUTI = model.HedgeUTI;
+        HedgeISIN = model.HedgeISIN;
+        BookCalypso = model.BookCalypso;
+    }
 }

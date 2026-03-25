@@ -27,7 +27,19 @@ public partial class App : Application
             // Ingest service unavailable — Save will show an error but the app still starts
         }
 
-        var viewModel = new MainViewModel(dbService, emailService, ingestService);
+        // Create the recent trade service for Open Recent functionality
+        IRecentTradeService? recentTradeService = null;
+        try
+        {
+            const string recentTradesPath = @"\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\FxTrades";
+            recentTradeService = new RecentTradeService(recentTradesPath);
+        }
+        catch
+        {
+            // Recent trade service unavailable — Open Recent will show an error
+        }
+
+        var viewModel = new MainViewModel(dbService, emailService, ingestService, recentTradeService);
 
         var window = new MainWindow { DataContext = viewModel };
         window.Show();

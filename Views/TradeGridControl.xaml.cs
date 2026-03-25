@@ -274,6 +274,7 @@ public partial class TradeGridControl : UserControl
             oldVm.DistributorClearRequested -= OnDistributorClearRequested;
             oldVm.SolvingDialogRequested -= OnSolvingDialogRequested;
             oldVm.SaveResultDialogRequested -= OnSaveResultDialogRequested;
+            oldVm.OpenRecentDialogRequested -= OnOpenRecentDialogRequested;
             oldVm.PropertyChanged -= OnVmPropertyChanged;
             foreach (var leg in oldVm.Legs)
                 leg.PropertyChanged -= OnLegPropertyChanged;
@@ -286,6 +287,7 @@ public partial class TradeGridControl : UserControl
             _vm.DistributorClearRequested += OnDistributorClearRequested;
             _vm.SolvingDialogRequested += OnSolvingDialogRequested;
             _vm.SaveResultDialogRequested += OnSaveResultDialogRequested;
+            _vm.OpenRecentDialogRequested += OnOpenRecentDialogRequested;
             _vm.PropertyChanged += OnVmPropertyChanged;
             foreach (var leg in _vm.Legs)
                 leg.PropertyChanged += OnLegPropertyChanged;
@@ -378,6 +380,20 @@ public partial class TradeGridControl : UserControl
             var ownerWindow = Window.GetWindow(this);
             var dialog = new SaveResultDialog(items, successCount, failCount) { Owner = ownerWindow };
             dialog.ShowDialog();
+        }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void OnOpenRecentDialogRequested(IRecentTradeService recentTradeService)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var ownerWindow = Window.GetWindow(this);
+            var dialog = new OpenRecentDialog(recentTradeService) { Owner = ownerWindow };
+
+            if (dialog.ShowDialog() == true && dialog.LoadedTrade != null)
+            {
+                _vm?.LoadTrade(dialog.LoadedTrade);
+            }
         }, System.Windows.Threading.DispatcherPriority.Input);
     }
 

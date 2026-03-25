@@ -1,12 +1,12 @@
-﻿using System.Collections.ObjectModel;
-using System.Collections.Specialized;
-using System.Data;
-using System.Windows;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FxTradeConfirmation.Helpers;
 using FxTradeConfirmation.Models;
 using FxTradeConfirmation.Services;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Data;
+using System.Windows;
 
 namespace FxTradeConfirmation.ViewModels;
 
@@ -15,12 +15,14 @@ public partial class MainViewModel : ObservableObject
     public IDatabaseService DatabaseService { get; }
     private readonly IEmailService _emailService;
     private readonly ITradeIngestService? _ingestService;
+    private readonly IRecentTradeService? _recentTradeService;
 
-    public MainViewModel(IDatabaseService databaseService, IEmailService emailService, ITradeIngestService? ingestService = null)
+    public MainViewModel(IDatabaseService databaseService, IEmailService emailService, ITradeIngestService? ingestService = null, IRecentTradeService? recentTradeService = null)
     {
         DatabaseService = databaseService;
         _emailService = emailService;
         _ingestService = ingestService;
+        _recentTradeService = recentTradeService;
         ReferenceData = new ReferenceData();
 
         // Start with one leg
@@ -97,6 +99,12 @@ public partial class MainViewModel : ObservableObject
     /// Parameters: results list, trade leg models (for labeling), success count, fail count.
     /// </summary>
     public event Action<IReadOnlyList<TradeSubmitResult>, IReadOnlyList<TradeLeg>, int, int>? SaveResultDialogRequested;
+
+    /// <summary>
+    /// Raised when "Open Recent" is clicked so the view can show the dialog.
+    /// The IRecentTradeService is passed so the dialog can load data.
+    /// </summary>
+    public event Action<IRecentTradeService>? OpenRecentDialogRequested;
 
     // --- Initialization ---
 
@@ -273,6 +281,16 @@ public partial class MainViewModel : ObservableObject
                 StatusMessage = $"⚠ {successCount} saved, {failCount} failed — {errors}";
             }
 
+            // Save to recent trades (best-effort, don't block the user)
+            if (successCount > 0 && _recentTradeService != null)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await _recentTradeService.SaveRecentTradeAsync(models); }
+                    catch { /* silent — recent trade save is non-critical */ }
+                });
+            }
+
             // Show results dialog
             SaveResultDialogRequested?.Invoke(results, models, successCount, failCount);
         }
@@ -280,6 +298,42 @@ public partial class MainViewModel : ObservableObject
         {
             StatusMessage = $"Save failed: {ex.Message}";
         }
+    }
+
+    [RelayCommand]
+    private void OpenRecent()
+    {
+        if (_recentTradeService == null)
+        {
+            StatusMessage = "Open Recent unavailable — trade storage not configured.";
+            return;
+        }
+
+        OpenRecentDialogRequested?.Invoke(_recentTradeService);
+    }
+
+    /// <summary>
+    /// Loads a saved trade into the current workspace, replacing all legs.
+    /// </summary>
+    public void LoadTrade(SavedTradeData tradeData)
+    {
+        CancelSolving();
+        Legs.Clear();
+
+        foreach (var model in tradeData.Legs)
+        {
+            var leg = new TradeLegViewModel(this, Legs.Count + 1);
+            leg.LoadFromModel(model);
+            Legs.Add(leg);
+        }
+
+        RenumberLegs();
+        OnPropertyChanged(nameof(HasMultipleLegs));
+        OnPropertyChanged(nameof(HasAnyHedge));
+        UpdateTotalPremium();
+        UpdateSaveValidation();
+
+        StatusMessage = $"Loaded trade: {tradeData.Legs.Count} leg(s)";
     }
 
     [RelayCommand]

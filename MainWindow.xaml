@@ -142,6 +142,18 @@
                         Margin="8,2"/>
 
                         <Button Style="{StaticResource ToolbarButton}"
+                        Command="{Binding OpenRecentCommand}" Margin="4,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="M1,3 H11 M1,6 H9 M1,9 H7 M1,0 V12"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1" Fill="Transparent"
+                              Width="11" Height="11" Stretch="Uniform"
+                              Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Open Recent" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Style="{StaticResource ToolbarButton}"
                         Command="{Binding SendMailCommand}" Margin="4,0">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="M0,2 L7,8 L14,2 M0,2 H14 V12 H0 Z"
@@ -168,7 +180,7 @@
                                 <TextBlock Text="Details" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
-                        
+
                     </StackPanel>
                 </DockPanel>
             </Border>
