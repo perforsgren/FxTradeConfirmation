@@ -1,4 +1,5 @@
 ﻿using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Data;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -49,6 +50,12 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private string _totalPremiumAmountDisplay = string.Empty;
 
+    /// <summary>True when all required fields are filled on every leg.</summary>
+    [ObservableProperty] private bool _canSave;
+
+    /// <summary>Tooltip text listing the missing required fields, or empty when all fields are valid.</summary>
+    [ObservableProperty] private string _saveValidationTooltip = string.Empty;
+
     /// <summary>
     /// Brush resource key for total premium color:
     /// negative (pay) → "NegativeRedBrush", positive (receive) → "PositiveGreenBrush", zero → "AccentBlueBrush".
@@ -84,6 +91,12 @@ public partial class MainViewModel : ObservableObject
     /// Parameters: isByAmount, unitDisplay (e.g. "SEK pips"), contextLabel (e.g. "Leg 2 – Call – Premium").
     /// </summary>
     public event Action<bool, string, string>? SolvingDialogRequested;
+
+    /// <summary>
+    /// Raised after SaveAsync completes so the view can show a results dialog.
+    /// Parameters: results list, trade leg models (for labeling), success count, fail count.
+    /// </summary>
+    public event Action<IReadOnlyList<TradeSubmitResult>, IReadOnlyList<TradeLeg>, int, int>? SaveResultDialogRequested;
 
     // --- Initialization ---
 
@@ -172,6 +185,7 @@ public partial class MainViewModel : ObservableObject
         AddLegInternal();
         RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
+        UpdateSaveValidation();
     }
 
     [RelayCommand]
@@ -203,6 +217,7 @@ public partial class MainViewModel : ObservableObject
         Legs.Add(newLeg);
         RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
+        UpdateSaveValidation();
     }
 
     [RelayCommand]
@@ -219,6 +234,7 @@ public partial class MainViewModel : ObservableObject
         TotalPremiumStyleDisplay = string.Empty;
         TotalPremiumAmountDisplay = string.Empty;
         OnPropertyChanged(nameof(TotalPremiumBrushKey));
+        UpdateSaveValidation();
     }
 
     [RelayCommand]
@@ -256,6 +272,9 @@ public partial class MainViewModel : ObservableObject
                 var errors = string.Join(" | ", results.Where(r => !r.Success).Select(r => r.ErrorMessage));
                 StatusMessage = $"⚠ {successCount} saved, {failCount} failed — {errors}";
             }
+
+            // Show results dialog
+            SaveResultDialogRequested?.Invoke(results, models, successCount, failCount);
         }
         catch (Exception ex)
         {
@@ -659,11 +678,48 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HasMultipleLegs));
         OnPropertyChanged(nameof(TotalPremiumBrushKey));
+
+        UpdateSaveValidation();
+    }
+
+    /// <summary>
+    /// Re-evaluates whether all required fields are filled and updates
+    /// <see cref="CanSave"/> and <see cref="SaveValidationTooltip"/>.
+    /// Called whenever a leg property changes.
+    /// </summary>
+    public void UpdateSaveValidation()
+    {
+        var missing = new List<string>();
+        bool multiLeg = Legs.Count > 1;
+
+        foreach (var leg in Legs)
+        {
+            string prefix = multiLeg ? $"Leg {leg.LegNumber}: " : "";
+
+            if (string.IsNullOrWhiteSpace(leg.Counterpart))
+                missing.Add($"{prefix}Counterpart");
+            if (string.IsNullOrWhiteSpace(leg.CurrencyPair))
+                missing.Add($"{prefix}Currency Pair");
+            if (!leg.Strike.HasValue)
+                missing.Add($"{prefix}Strike");
+            if (!leg.ExpiryDate.HasValue)
+                missing.Add($"{prefix}Expiry");
+            if (!leg.Notional.HasValue)
+                missing.Add($"{prefix}Notional");
+            if (!leg.PremiumAmount.HasValue)
+                missing.Add($"{prefix}Premium");
+        }
+
+        CanSave = missing.Count == 0;
+        SaveValidationTooltip = missing.Count == 0
+            ? string.Empty
+            : "Missing fields:\n" + string.Join("\n", missing.Select(m => $"  • {m}"));
     }
 
     public void NotifyLegChanged()
     {
         OnPropertyChanged(nameof(HasAnyHedge));
+        UpdateSaveValidation();
     }
 
     private bool ValidateAllLegs()
@@ -675,7 +731,8 @@ public partial class MainViewModel : ObservableObject
                       && !string.IsNullOrWhiteSpace(leg.CurrencyPair)
                       && leg.Strike.HasValue
                       && leg.ExpiryDate.HasValue
-                      && leg.Notional.HasValue;
+                      && leg.Notional.HasValue
+                      && leg.PremiumAmount.HasValue;
             leg.HasValidationError = !valid;
             if (!valid) allValid = false;
         }

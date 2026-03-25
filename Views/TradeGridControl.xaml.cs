@@ -1,4 +1,7 @@
-﻿using System.Collections.Specialized;
+﻿using FxTradeConfirmation.Models;
+using FxTradeConfirmation.Services;
+using FxTradeConfirmation.ViewModels;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
@@ -7,8 +10,6 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using FxTradeConfirmation.Models;
-using FxTradeConfirmation.ViewModels;
 
 namespace FxTradeConfirmation.Views;
 
@@ -272,6 +273,7 @@ public partial class TradeGridControl : UserControl
             oldVm.Legs.CollectionChanged -= OnLegsChanged;
             oldVm.DistributorClearRequested -= OnDistributorClearRequested;
             oldVm.SolvingDialogRequested -= OnSolvingDialogRequested;
+            oldVm.SaveResultDialogRequested -= OnSaveResultDialogRequested;
             oldVm.PropertyChanged -= OnVmPropertyChanged;
             foreach (var leg in oldVm.Legs)
                 leg.PropertyChanged -= OnLegPropertyChanged;
@@ -283,6 +285,7 @@ public partial class TradeGridControl : UserControl
             _vm.Legs.CollectionChanged += OnLegsChanged;
             _vm.DistributorClearRequested += OnDistributorClearRequested;
             _vm.SolvingDialogRequested += OnSolvingDialogRequested;
+            _vm.SaveResultDialogRequested += OnSaveResultDialogRequested;
             _vm.PropertyChanged += OnVmPropertyChanged;
             foreach (var leg in _vm.Legs)
                 leg.PropertyChanged += OnLegPropertyChanged;
@@ -322,6 +325,59 @@ public partial class TradeGridControl : UserControl
                 RemoveSolvingVisuals();
                 _vm?.CancelSolvingCommand.Execute(null);
             }
+        }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void OnSaveResultDialogRequested(
+    IReadOnlyList<TradeSubmitResult> results,
+    IReadOnlyList<TradeLeg> models,
+    int successCount,
+    int failCount)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var successBrush = (System.Windows.Media.Brush)FindResource("PositiveGreenBrush");
+            var failBrush = (System.Windows.Media.Brush)FindResource("NegativeRedBrush");
+
+            // First pass: collect (resultIndex, label) for options and hedges separately.
+            // SubmitTradeAsync produces results interleaved: option, [hedge], option, [hedge]…
+            var optionItems = new List<SaveResultItem>();
+            var hedgeItems = new List<SaveResultItem>();
+            int resultIndex = 0;
+
+            for (int i = 0; i < models.Count && resultIndex < results.Count; i++)
+            {
+                var leg = models[i];
+                int legNum = i + 1;
+
+                // Option result
+                string optionLabel = $"Leg {legNum} Option — {leg.BuySell} {leg.CallPut} " +
+                                     $"{leg.CurrencyPair} {leg.Strike:G29} " +
+                                     $"{leg.ExpiryDate:yyyy-MM-dd}";
+                optionItems.Add(SaveResultItem.FromResult(results[resultIndex], optionLabel, successBrush, failBrush));
+                resultIndex++;
+
+                // Hedge result (if present) — collect separately so all hedges appear after all options
+                bool hasHedge = leg.Hedge != Models.HedgeType.No
+                    && leg.HedgeNotional.HasValue
+                    && leg.HedgeRate.HasValue
+                    && resultIndex < results.Count;
+
+                if (hasHedge)
+                {
+                    string hedgeLabel = $"Leg {legNum} Hedge — {leg.Hedge} " +
+                                        $"{leg.HedgeBuySell} {leg.CurrencyPair} @ {leg.HedgeRate:G29}";
+                    hedgeItems.Add(SaveResultItem.FromResult(results[resultIndex], hedgeLabel, successBrush, failBrush));
+                    resultIndex++;
+                }
+            }
+
+            // Options first, then hedges
+            var items = optionItems.Concat(hedgeItems).ToList();
+
+            var ownerWindow = Window.GetWindow(this);
+            var dialog = new SaveResultDialog(items, successCount, failCount) { Owner = ownerWindow };
+            dialog.ShowDialog();
         }, System.Windows.Threading.DispatcherPriority.Input);
     }
 

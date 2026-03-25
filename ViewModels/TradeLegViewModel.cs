@@ -207,6 +207,7 @@ public partial class TradeLegViewModel : ObservableObject
     {
         if (IsFirstLeg)
             _parent.PropagateFromLeg1(nameof(Counterpart), value);
+        _parent.UpdateSaveValidation();
     }
 
     partial void OnCurrencyPairChanged(string value)
@@ -275,6 +276,12 @@ public partial class TradeLegViewModel : ObservableObject
         OnPropertyChanged(nameof(Strike));
         OnPropertyChanged(nameof(PremiumInputEnabled));
         RecalculatePremiumFromPremiumText();
+        _parent.UpdateSaveValidation();
+    }
+
+    partial void OnExpiryDateChanged(DateTime? value)
+    {
+        _parent.UpdateSaveValidation();
     }
 
     partial void OnNotionalTextChanged(string value)
@@ -644,7 +651,13 @@ public partial class TradeLegViewModel : ObservableObject
             if (_lastValidPremium.HasValue)
                 PremiumText = FormatPremium(_lastValidPremium.Value, _userPremiumDecimals ?? PremiumDefaultDecimals);
             else
+            {
+                // Invalid input and no prior valid premium — clear both fields so they stay in sync.
                 PremiumText = string.Empty;
+                _lastValidPremiumAmount = null;
+                _userPremiumAmountDecimals = null;
+                PremiumAmountText = string.Empty;
+            }
         }
     }
 
@@ -675,7 +688,13 @@ public partial class TradeLegViewModel : ObservableObject
             if (_lastValidPremiumAmount.HasValue)
                 PremiumAmountText = FormatPremiumAmount(_lastValidPremiumAmount.Value, _userPremiumAmountDecimals ?? 2);
             else
+            {
+                // Invalid input and no prior valid premium amount — clear both fields so they stay in sync.
                 PremiumAmountText = string.Empty;
+                _lastValidPremium = null;
+                _userPremiumDecimals = null;
+                PremiumText = string.Empty;
+            }
         }
     }
 

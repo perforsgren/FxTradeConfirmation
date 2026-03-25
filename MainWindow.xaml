@@ -93,8 +93,13 @@
                     <!-- Right-aligned primary actions -->
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                         HorizontalAlignment="Right" VerticalAlignment="Center">
+
                         <Button Style="{StaticResource ToolbarPrimaryButton}"
-                        Command="{Binding SaveCommand}" Margin="4,0,0,0">
+                        Command="{Binding SaveCommand}" Margin="4,0,0,0"
+                        IsEnabled="{Binding CanSave}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTipService.InitialShowDelay="200"
+                        ToolTip="{Binding SaveValidationTooltip, Converter={StaticResource StringToTooltip}}">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="M2,0 H10 L12,2 V14 H0 V0 Z M4,0 V4 H9 V0 M2,8 H10 V14 H2 Z"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -104,6 +109,7 @@
                                 <TextBlock Text="Save" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+
                     </StackPanel>
 
                     <!-- Left-aligned secondary actions -->
