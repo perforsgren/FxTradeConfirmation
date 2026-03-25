@@ -31,7 +31,6 @@ public partial class MainViewModel : ObservableObject
     // --- State ---
     [ObservableProperty] private ReferenceData _referenceData;
     [ObservableProperty] private bool _isConnected;
-    [ObservableProperty] private bool _isAdmin;
     [ObservableProperty] private bool _showAdminRows;
     [ObservableProperty] private bool _isSolvingMode;
     [ObservableProperty] private decimal _totalPremium;
@@ -90,9 +89,6 @@ public partial class MainViewModel : ObservableObject
 
     private async Task InitializeAsync()
     {
-        var user = Environment.UserName.ToUpperInvariant();
-        IsAdmin = user is "P901PEF" or "P901MGU";
-
         await RefreshConnectionAsync();
         if (IsConnected)
         {
@@ -143,11 +139,20 @@ public partial class MainViewModel : ObservableObject
                 resolvedTrader = mx3Id;
             }
 
+            // Resolve Calypso Book from DB: Environment.UserName → stp_calypso_book_user.CalypsoBook
+            // Fallback to "FX51" if user not found in the mapping table
+            string resolvedCalypsoBook = ReferenceData.TraderIdToCalypsoBook.TryGetValue(currentUser, out var book)
+                ? book
+                : "FX51";
+
             foreach (var leg in Legs)
             {
                 // Set Trader from DB lookup (falls back to Environment.UserName if not found)
                 if (resolvedTrader != null)
                     leg.Trader = resolvedTrader;
+
+                // Set Calypso Book from DB lookup
+                leg.BookCalypso = resolvedCalypsoBook;
 
                 // Re-assign to trigger OnInvestmentDecisionIDChanged which sets Sales + ReportingEntity
                 var currentId = leg.InvestmentDecisionID;
@@ -282,8 +287,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ToggleAdminRows()
     {
-        if (IsAdmin)
-            ShowAdminRows = !ShowAdminRows;
+        ShowAdminRows = !ShowAdminRows;
     }
 
     // --- Distributor ---
@@ -575,6 +579,7 @@ public partial class MainViewModel : ObservableObject
             leg.ExecutionTime = leg1.ExecutionTime;
             leg.Mic = leg1.Mic;
             leg.Broker = leg1.Broker;
+            leg.BookCalypso = leg1.BookCalypso;
         }
         else if (ReferenceData.UserIdToFullName.Count > 0)
         {
@@ -584,6 +589,11 @@ public partial class MainViewModel : ObservableObject
             if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
                 && !string.IsNullOrEmpty(mx3Id))
                 leg.Trader = mx3Id;
+
+            // Resolve Calypso Book for the current user, fallback to "FX51"
+            leg.BookCalypso = ReferenceData.TraderIdToCalypsoBook.TryGetValue(currentUser, out var book)
+                ? book
+                : "FX51";
 
             // Force trigger to populate Sales + ReportingEntity
             var currentId = leg.InvestmentDecisionID;

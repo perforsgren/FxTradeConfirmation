@@ -49,10 +49,10 @@ public partial class TradeGridControl : UserControl
     private const int RowHedgeNotionalCcy = 32;
     private const int RowHedgeRate = 33;
     private const int RowHedgeSettlement = 34;
-    private const int RowHedgeTvtic = 35;
-    private const int RowHedgeUti = 36;
-    private const int RowHedgeIsin = 37;
-    private const int RowBookCalypso = 38;
+    private const int RowBookCalypso = 35;
+    private const int RowHedgeTvtic = 36;
+    private const int RowHedgeUti = 37;
+    private const int RowHedgeIsin = 38;
     private const int TotalRows = 39;
 
     private static readonly int[] HedgeDetailRows =
@@ -872,12 +872,10 @@ public partial class TradeGridControl : UserControl
             }
 
         // ── Dist → Leg 1 tab map ─────────────────────────────────────
-        // For each dist TextBox, map it to the first leg's control on the
-        // same row. The mapping is set up after all leg controls are registered
-        // so legControls[0] is fully populated.
         void MapDist(UIElement distCtrl, int row)
         {
-            var leg1Match = legControls[0].FirstOrDefault(x => x.row == row);
+            if (!legControls.TryGetValue(0, out var leg1Controls)) return;
+            var leg1Match = leg1Controls.FirstOrDefault(x => x.row == row);
             if (leg1Match.control != null)
                 _distTabMap[distCtrl] = leg1Match.control;
         }
@@ -893,7 +891,7 @@ public partial class TradeGridControl : UserControl
 
     private void BuildAdminRows(int legCount, int totalCols)
     {
-        AddSectionHeaderRow(RowAdminSection, "⚙  ADMIN", totalCols);
+        AddSectionHeaderRow(RowAdminSection, "📋  BOOKING DETAILS", totalCols);
         AddRowLabel(RowPortfolio, "Portfolio MX3", totalCols);
         AddRowLabel(RowTrader, "Trader", totalCols);
         AddRowLabel(RowExecutionTime, "Execution Time", totalCols);
@@ -1034,10 +1032,10 @@ public partial class TradeGridControl : UserControl
         AddRowLabel(RowHedgeNotional, "Notional", totalCols, isHedgeDetail: true);
         AddRowLabel(RowHedgeRate, "Hedge Rate", totalCols, isHedgeDetail: true);
         AddRowLabel(RowHedgeSettlement, "Settlement Date", totalCols, isHedgeDetail: true);
+        AddRowLabel(RowBookCalypso, "Calypso Book", totalCols, isHedgeDetail: true);  // ← direkt under Settlement Date
         AddRowLabel(RowHedgeTvtic, "Hedge TVTIC", totalCols);
         AddRowLabel(RowHedgeUti, "Hedge UTI", totalCols);
         AddRowLabel(RowHedgeIsin, "Hedge ISIN", totalCols);
-        AddRowLabel(RowBookCalypso, "Book Calypso", totalCols);
 
         AddDistToggle(RowHedgeBuySell, ColDistToggle, DistToggle_HedgeBuySell, "Flippa Hedge Buy/Sell på alla legs");
 
@@ -1129,6 +1127,12 @@ public partial class TradeGridControl : UserControl
             AddCell(RowHedgeSettlement, vc, hSettlement);
             legHedgeElements.Add(hSettlement);
 
+            // Calypso Book — visible only when Admin + Hedge active
+            var hBook = CreateLegComboBox(leg, nameof(leg.BookCalypso), "ReferenceData.CalypsoBooks");
+            AddCell(RowBookCalypso, vc, hBook);
+            legHedgeAdminElements.Add(hBook);
+            legHedgeControls[i].Add((RowBookCalypso, hBook, () => leg.HasHedge));
+
             var hTvtic = CreateLegTextBox(leg, nameof(leg.HedgeTVTIC));
             AddCell(RowHedgeTvtic, vc, hTvtic);
             legHedgeAdminElements.Add(hTvtic);
@@ -1143,11 +1147,6 @@ public partial class TradeGridControl : UserControl
             AddCell(RowHedgeIsin, vc, hIsin);
             legHedgeAdminElements.Add(hIsin);
             legHedgeControls[i].Add((RowHedgeIsin, hIsin, () => leg.HasHedge));
-
-            var hBook = CreateLegTextBox(leg, nameof(leg.BookCalypso));
-            AddCell(RowBookCalypso, vc, hBook);
-            legHedgeAdminElements.Add(hBook);
-            legHedgeControls[i].Add((RowBookCalypso, hBook, () => leg.HasHedge));
 
             _hedgeDetailElements.Add(legHedgeElements);
             _hedgeAdminElements.Add(legHedgeAdminElements);
@@ -1173,7 +1172,8 @@ public partial class TradeGridControl : UserControl
         // Dist → Leg 1 map for hedge distributor inputs
         void MapDistHedge(UIElement distCtrl, int row)
         {
-            var leg1Match = legHedgeControls[0].FirstOrDefault(x => x.row == row);
+            if (!legHedgeControls.TryGetValue(0, out var leg1Controls)) return;
+            var leg1Match = leg1Controls.FirstOrDefault(x => x.row == row);
             if (leg1Match.control != null)
                 _distTabMap[distCtrl] = leg1Match.control;
         }

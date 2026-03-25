@@ -152,17 +152,17 @@
 
                         <Button Style="{StaticResource ToolbarButton}"
                         Command="{Binding ToggleAdminRowsCommand}"
-                        Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"
                         Margin="4,0">
                             <StackPanel Orientation="Horizontal">
-                                <Path Data="M7,0 A2,2 0 1,1 7,4 A2,2 0 1,1 7,0 M3,9 A5,5 0 0,1 11,9"
+                                <Path Data="M0,1 H12 M0,5 H10 M0,9 H8"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                               StrokeThickness="1.2" Fill="Transparent"
                               Width="11" Height="11" Stretch="Uniform"
                               Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="Admin" VerticalAlignment="Center"/>
+                                <TextBlock Text="Details" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+                        
                     </StackPanel>
                 </DockPanel>
             </Border>

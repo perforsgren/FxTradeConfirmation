@@ -60,41 +60,60 @@ public class DatabaseService : IDatabaseService
 
         try
         {
-            await using var conn = new MySqlConnection(_connectionString);
-            await conn.OpenAsync();
-
-            data.Counterparts = await QueryListAsync(conn, "SELECT CounterpartyCode FROM counterparty WHERE IsActive = 1 ORDER BY CounterpartyCode");
-            data.CurrencyPairs = await QueryListAsync(conn, "SELECT currencypair FROM currencypairs ORDER BY currencypair");
-            data.EmailAddresses = await QueryListAsync(conn, "SELECT emailaddress FROM emailaddresses");
-            data.SalesNames = await QueryListAsync(conn, "SELECT DISTINCT FullName FROM userprofile WHERE FullName IS NOT NULL AND IsActive = 1 ORDER BY FullName");
-            data.ReportingEntities = await QueryListAsync(conn, "SELECT DISTINCT ReportingEntityId FROM userprofile WHERE ReportingEntityId IS NOT NULL AND IsActive = 1");
-            data.InvestmentDecisionIDs = await QueryListAsync(conn, "SELECT DISTINCT UserId FROM userprofile WHERE UserId IS NOT NULL AND IsActive = 1 ORDER BY UserId");
+            // Use separate connections per query to avoid "open DataReader" conflicts.
+            // MySql Connector/NET does not support MARS — only one active reader per connection.
+            data.Counterparts = await QueryListAsync("SELECT CounterpartyCode FROM counterparty WHERE IsActive = 1 ORDER BY CounterpartyCode");
+            data.CurrencyPairs = await QueryListAsync("SELECT currencypair FROM currencypairs ORDER BY currencypair");
+            data.EmailAddresses = await QueryListAsync("SELECT emailaddress FROM emailaddresses");
+            data.SalesNames = await QueryListAsync("SELECT DISTINCT FullName FROM userprofile WHERE FullName IS NOT NULL AND IsActive = 1 ORDER BY FullName");
+            data.ReportingEntities = await QueryListAsync("SELECT DISTINCT ReportingEntityId FROM userprofile WHERE ReportingEntityId IS NOT NULL AND IsActive = 1");
+            data.InvestmentDecisionIDs = await QueryListAsync("SELECT DISTINCT UserId FROM userprofile WHERE UserId IS NOT NULL AND IsActive = 1 ORDER BY UserId");
 
             // Load user profile lookup maps: UserId ↔ FullName, UserId → ReportingEntityId, UserId → Mx3Id
-            await using var profileCmd = new MySqlCommand(
-                "SELECT UserId, FullName, ReportingEntityId, Mx3Id FROM userprofile WHERE IsActive = 1 AND UserId IS NOT NULL AND FullName IS NOT NULL", conn);
-            await using var profileReader = await profileCmd.ExecuteReaderAsync();
-            while (await profileReader.ReadAsync())
+            await using (var conn = new MySqlConnection(_connectionString))
             {
-                var userId = profileReader.GetString(0);
-                var fullName = profileReader.GetString(1);
-                var reportingEntity = profileReader.IsDBNull(2) ? string.Empty : profileReader.GetString(2);
-                var mx3Id = profileReader.IsDBNull(3) ? string.Empty : profileReader.GetString(3);
+                await conn.OpenAsync();
+                await using var profileCmd = new MySqlCommand(
+                    "SELECT UserId, FullName, ReportingEntityId, Mx3Id FROM userprofile WHERE IsActive = 1 AND UserId IS NOT NULL AND FullName IS NOT NULL", conn);
+                await using var profileReader = await profileCmd.ExecuteReaderAsync();
+                while (await profileReader.ReadAsync())
+                {
+                    var userId = profileReader.GetString(0);
+                    var fullName = profileReader.GetString(1);
+                    var reportingEntity = profileReader.IsDBNull(2) ? string.Empty : profileReader.GetString(2);
+                    var mx3Id = profileReader.IsDBNull(3) ? string.Empty : profileReader.GetString(3);
 
-                // UserId is unique — safe to TryAdd
-                data.UserIdToFullName.TryAdd(userId, fullName);
-                data.UserIdToReportingEntity.TryAdd(userId, reportingEntity);
-                data.UserIdToMx3Id.TryAdd(userId, mx3Id);
-                // FullName may not be unique — first match wins for reverse lookup
-                data.FullNameToUserId.TryAdd(fullName, userId);
+                    data.UserIdToFullName.TryAdd(userId, fullName);
+                    data.UserIdToReportingEntity.TryAdd(userId, reportingEntity);
+                    data.UserIdToMx3Id.TryAdd(userId, mx3Id);
+                    data.FullNameToUserId.TryAdd(fullName, userId);
+                }
             }
-            await profileReader.CloseAsync();
 
-            await using var cmd = new MySqlCommand(
-                "SELECT CurrencyPair, PortfolioCode FROM ccypairportfoliorule WHERE IsActive = 1", conn);
-            await using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-                data.CurrencyToPortfolio[reader.GetString(0)] = reader.GetString(1);
+            await using (var conn = new MySqlConnection(_connectionString))
+            {
+                await conn.OpenAsync();
+                await using var cmd = new MySqlCommand(
+                    "SELECT CurrencyPair, PortfolioCode FROM ccypairportfoliorule WHERE IsActive = 1", conn);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    data.CurrencyToPortfolio[reader.GetString(0)] = reader.GetString(1);
+            }
+
+            // Load Calypso Book user mapping: TraderId → CalypsoBook
+            await using (var conn = new MySqlConnection(_connectionString))
+            {
+                await conn.OpenAsync();
+                await using var calypsoCmd = new MySqlCommand(
+                    "SELECT TraderId, CalypsoBook FROM stp_calypso_book_user WHERE IsActive = 1", conn);
+                await using var calypsoReader = await calypsoCmd.ExecuteReaderAsync();
+                while (await calypsoReader.ReadAsync())
+                {
+                    var traderId = calypsoReader.GetString(0);
+                    var calypsoBook = calypsoReader.GetString(1);
+                    data.TraderIdToCalypsoBook.TryAdd(traderId, calypsoBook);
+                }
+            }
 
             Debug.WriteLine("[DatabaseService] Reference data loaded successfully.");
         }
@@ -246,9 +265,11 @@ public class DatabaseService : IDatabaseService
         return true;
     }
 
-    private static async Task<List<string>> QueryListAsync(MySqlConnection conn, string sql)
+    private async Task<List<string>> QueryListAsync(string sql)
     {
         var list = new List<string>();
+        await using var conn = new MySqlConnection(_connectionString);
+        await conn.OpenAsync();
         await using var cmd = new MySqlCommand(sql, conn);
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())

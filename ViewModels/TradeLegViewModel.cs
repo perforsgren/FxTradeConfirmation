@@ -882,7 +882,7 @@ public partial class TradeLegViewModel : ObservableObject
     private async Task LoadPortfolioAsync(string currencyPair)
     {
         var portfolio = await _parent.DatabaseService.GetPortfolioForCurrencyPairAsync(currencyPair);
-        PortfolioMX3 = portfolio ?? string.Empty;
+        PortfolioMX3 = !string.IsNullOrEmpty(portfolio) ? portfolio : "MAJORS";
     }
 
     public async Task LoadPortfolioForCurrentPairAsync()
@@ -964,6 +964,7 @@ public partial class TradeLegViewModel : ObservableObject
         _lastValidExecutionTime = source._lastValidExecutionTime;
         Mic = source.Mic;
         Broker = source.Broker;
+        BookCalypso = source.BookCalypso;
         _cachedSpotDate = source._cachedSpotDate;
     }
 }

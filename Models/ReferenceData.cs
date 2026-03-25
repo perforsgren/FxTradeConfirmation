@@ -27,6 +27,9 @@ public class ReferenceData
         "FX VOLATILITY",
     ];
 
+    // TODO: Replace hardcoded list with DB lookup from trade_stp.stp_calypso_book (or similar reference table)
+    public List<string> CalypsoBooks { get; set; } = ["FX22", "FX25", "FX51"];
+
     // Currency pair → Portfolio mapping
     public Dictionary<string, string> CurrencyToPortfolio { get; set; } = [];
 
@@ -42,4 +45,10 @@ public class ReferenceData
 
     /// <summary>userprofile.UserId → userprofile.Mx3Id (used to resolve Trader from Windows login)</summary>
     public Dictionary<string, string> UserIdToMx3Id { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// stp_calypso_book_user.TraderId → stp_calypso_book_user.CalypsoBook
+    /// Used to auto-select Calypso Book based on Environment.UserName.
+    /// </summary>
+    public Dictionary<string, string> TraderIdToCalypsoBook { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

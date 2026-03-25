@@ -51,35 +51,43 @@ public class TradeIngestService : ITradeIngestService
             var leg = legs[i];
             int legNumber = i + 1;
 
-            // Parse ExecutionTime from the leg's string format → UTC DateTime
             var executionTimeUtc = ParseExecutionTime(leg.ExecutionTime);
 
+            // BuySell in the UI is from the CLIENT's perspective.
+            // The STP hub stores from the BANK's perspective — so invert.
+            var bankBuySell = leg.BuySell == BuySell.Buy ? "Sell" : "Buy";
+            var bankHedgeBuySell = leg.HedgeBuySell == BuySell.Buy ? "Sell" : "Buy";
+
             // ── 1. Submit the OPTION_VANILLA payload ──
-            // HedgeType is intentionally omitted (null) for options per STP hub convention.
             var optionPayload = new ExternalTradePayload
             {
-                ProductType      = "OPTION_VANILLA",
-                CurrencyPair     = leg.CurrencyPair,
-                BuySell          = leg.BuySell.ToString(),
-                Notional         = leg.Notional ?? 0m,
+                ProductType = "OPTION_VANILLA",
+                CurrencyPair = leg.CurrencyPair,
+                BuySell = bankBuySell,
+                Notional = leg.Notional ?? 0m,
                 NotionalCurrency = leg.NotionalCurrency,
-                TradeDate        = DateTime.Today,
-                SettlementDate   = leg.SettlementDate ?? DateTime.Today.AddDays(2),
+                TradeDate = DateTime.Today,
+                SettlementDate = leg.SettlementDate ?? DateTime.Today.AddDays(2),
                 CounterpartyCode = leg.Counterpart,
-                TraderId         = leg.Trader,
-                PortfolioMx3     = leg.PortfolioMX3,
-                CallPut          = leg.CallPut.ToString(),
-                Strike           = leg.Strike ?? 0m,
-                ExpiryDate       = leg.ExpiryDate ?? DateTime.Today,
-                Cut              = leg.Cut,
-                Premium          = leg.PremiumAmount.HasValue ? Math.Abs(leg.PremiumAmount.Value) : 0m,
-                PremiumCurrency  = leg.PremiumCurrency,
-                PremiumDate      = leg.PremiumDate ?? DateTime.Today.AddDays(2),
-                InvId             = leg.InvestmentDecisionID,
+                TraderId = leg.Trader,
+                PortfolioMx3 = leg.PortfolioMX3,
+                CallPut = leg.CallPut.ToString(),
+                Strike = leg.Strike ?? 0m,
+                ExpiryDate = leg.ExpiryDate ?? DateTime.Today,
+                Cut = leg.Cut,
+                Premium = leg.PremiumAmount.HasValue ? Math.Abs(leg.PremiumAmount.Value) : 0m,
+                PremiumCurrency = leg.PremiumCurrency,
+                PremiumDate = leg.PremiumDate ?? DateTime.Today.AddDays(2),
+                InvId = leg.InvestmentDecisionID,
                 ReportingEntityId = leg.ReportingEntity,
-                SourceVenueCode       = SourceVenueCode,
+                Mic = leg.MIC,
+                Tvtic = leg.TVTIC,
+                Isin = leg.ISIN,
+                BrokerCode = leg.Broker,
+                Margin = leg.Margin ?? 0m,
+                SourceVenueCode = SourceVenueCode,
                 ExternalSourceTradeId = $"FTC-{batchId}-L{legNumber}-OPT",
-                ExecutionTimeUtc      = executionTimeUtc
+                ExecutionTimeUtc = executionTimeUtc
             };
 
             var optResult = await SubmitSingleAsync(optionPayload, $"Leg {legNumber} Option");
@@ -92,24 +100,28 @@ public class TradeIngestService : ITradeIngestService
 
                 var hedgePayload = new ExternalTradePayload
                 {
-                    ProductType      = hedgeProductType,
-                    HedgeType        = hedgeProductType,   // mirrors ProductType — required for blotter column
-                    CurrencyPair     = leg.CurrencyPair,
-                    BuySell          = leg.HedgeBuySell.ToString(),
-                    Notional         = Math.Abs(leg.HedgeNotional.Value),
+                    ProductType = hedgeProductType,
+                    HedgeType = hedgeProductType,
+                    CurrencyPair = leg.CurrencyPair,
+                    BuySell = bankHedgeBuySell,
+                    Notional = Math.Abs(leg.HedgeNotional.Value),
                     NotionalCurrency = leg.HedgeNotionalCurrency,
-                    TradeDate        = DateTime.Today,
-                    SettlementDate   = leg.HedgeSettlementDate ?? DateTime.Today.AddDays(2),
+                    TradeDate = DateTime.Today,
+                    SettlementDate = leg.HedgeSettlementDate ?? DateTime.Today.AddDays(2),
                     CounterpartyCode = leg.Counterpart,
-                    TraderId         = leg.Trader,
-                    PortfolioMx3     = leg.PortfolioMX3,
-                    CalypsoBook      = leg.BookCalypso,
-                    HedgeRate        = leg.HedgeRate.Value,
-                    InvId             = leg.InvestmentDecisionID,
+                    TraderId = leg.Trader,
+                    PortfolioMx3 = leg.PortfolioMX3,
+                    CalypsoBook = leg.BookCalypso,
+                    HedgeRate = leg.HedgeRate.Value,
+                    InvId = leg.InvestmentDecisionID,
                     ReportingEntityId = leg.ReportingEntity,
-                    SourceVenueCode       = SourceVenueCode,
+                    Mic = leg.MIC,
+                    Tvtic = leg.HedgeTVTIC,
+                    Isin = leg.HedgeISIN,
+                    Uti = leg.HedgeUTI,
+                    SourceVenueCode = SourceVenueCode,
                     ExternalSourceTradeId = $"FTC-{batchId}-L{legNumber}-HDG",
-                    ExecutionTimeUtc      = executionTimeUtc
+                    ExecutionTimeUtc = executionTimeUtc
                 };
 
                 var hdgResult = await SubmitSingleAsync(hedgePayload, $"Leg {legNumber} Hedge");
