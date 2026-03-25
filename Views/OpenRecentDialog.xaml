@@ -66,7 +66,7 @@
                             <GridViewColumn Header="STRUCTURE" Width="160"
                                 DisplayMemberBinding="{Binding LegSummary}"/>
                             <GridViewColumn Header="EXPIRY" Width="90"
-                                DisplayMemberBinding="{Binding TradeDate, StringFormat='{}{0:yyyy-MM-dd}'}"/>
+                                DisplayMemberBinding="{Binding ExpiryDate, StringFormat='{}{0:yyyy-MM-dd}'}"/>
                         </GridView>
                     </ListView.View>
                     <ListView.ItemContainerStyle>
