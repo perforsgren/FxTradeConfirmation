@@ -13,4 +13,14 @@ public interface IOvmlParser
     /// </summary>
     /// <returns>True if parsing produced a non-empty result.</returns>
     bool TryParse(string input, out string ovml, out IReadOnlyList<OvmlLeg> legs);
+
+    /// <summary>
+    /// Async version of <see cref="TryParse"/>. Default implementation delegates to the sync version.
+    /// </summary>
+    Task<(bool Success, string Ovml, IReadOnlyList<OvmlLeg> Legs)> TryParseAsync(
+        string input, CancellationToken ct = default)
+    {
+        var success = TryParse(input, out var ovml, out var legs);
+        return Task.FromResult((success, ovml, legs));
+    }
 }

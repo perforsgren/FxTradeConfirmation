@@ -1,10 +1,10 @@
-﻿using System.Globalization;
+﻿using FxTradeConfirmation.Models;
+using OpenAI.Chat;
+using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using FxTradeConfirmation.Models;
-using System.IO;
-using OpenAI.Chat;
 
 namespace FxTradeConfirmation.Services;
 
@@ -32,48 +32,65 @@ public sealed class OvmlBuilder : IOvmlParser
     private readonly string _promptFilePath;
 
     // ── Debug / diagnostics ──────────────────────────────────────────────────
-    public string  LastJson          { get; private set; } = string.Empty;
-    public string  LastPair          { get; private set; } = string.Empty;
-    public string  LastSpot          { get; private set; } = string.Empty;
-    public int     LastPassesUsed    { get; private set; }
-    public bool    LastWasCanceled   { get; private set; }
+    public string LastJson { get; private set; } = string.Empty;
+    public string LastPair { get; private set; } = string.Empty;
+    public string LastSpot { get; private set; } = string.Empty;
+    public int LastPassesUsed { get; private set; }
+    public bool LastWasCanceled { get; private set; }
 
     public OvmlBuilder(string promptFilePath, string? apiKey = null, string model = "gpt-5.4-mini")   //gpt-4o
     {
         _promptFilePath = promptFilePath;
-        _model          = string.IsNullOrWhiteSpace(model) ? "gpt-5.4-mini" : model;  //gpt-4o
-        _apiKey         = ResolveApiKey(apiKey, promptFilePath);
+        _model = string.IsNullOrWhiteSpace(model) ? "gpt-5.4-mini" : model;  //gpt-4o
+        _apiKey = ResolveApiKey(apiKey, promptFilePath);
     }
 
-    // ── IOvmlParser ──────────────────────────────────────────────────────────
+    // ── IOvmlParser (sync — safe bridge via Task.Run) ────────────────────────
 
     public bool TryParse(string input, out string ovml, out IReadOnlyList<OvmlLeg> legs)
     {
-        ovml = string.Empty;
-        legs = [];
+        // Task.Run strips the SynchronizationContext, so the inner await can never deadlock.
+        var result = Task.Run(() => TryParseAsync(input, CancellationToken.None)).GetAwaiter().GetResult();
+        ovml = result.Ovml;
+        legs = result.Legs;
+        return result.Success;
+    }
 
+    // ── IOvmlParser (async — preferred entry point) ──────────────────────────
+
+    public async Task<(bool Success, string Ovml, IReadOnlyList<OvmlLeg> Legs)> TryParseAsync(
+        string input, CancellationToken ct = default)
+    {
         try
         {
-            var prompt  = File.Exists(_promptFilePath) ? File.ReadAllText(_promptFilePath) : string.Empty;
-            var result  = Generate(input, prompt, CancellationToken.None);
-            ovml        = result.Ovml;
-            legs        = result.Legs;
-            return !string.IsNullOrEmpty(ovml) && legs.Count > 0;
+            var prompt = File.Exists(_promptFilePath)
+                ? await File.ReadAllTextAsync(_promptFilePath, ct)
+                : string.Empty;
+            var result = await GenerateAsync(input, prompt, ct);
+            var success = !string.IsNullOrEmpty(result.Ovml) && result.Legs.Count > 0;
+            return (success, result.Ovml, result.Legs);
         }
         catch
         {
-            return false;
+            return (false, string.Empty, []);
         }
     }
 
-    // ── Core generation ──────────────────────────────────────────────────────
+    // ── Core generation (sync bridge) ────────────────────────────────────────
 
     public ParseResult Generate(string input, string systemPrompt, CancellationToken ct)
     {
-        LastJson        = string.Empty;
-        LastPair        = string.Empty;
-        LastSpot        = string.Empty;
-        LastPassesUsed  = 0;
+        return Task.Run(() => GenerateAsync(input, systemPrompt, ct), ct).GetAwaiter().GetResult();
+    }
+
+    // ── Core generation (async) ──────────────────────────────────────────────
+
+    public async Task<ParseResult> GenerateAsync(string input, string systemPrompt, CancellationToken ct)
+    {
+        LastJson = string.Empty;
+        LastPair = string.Empty;
+        LastSpot = string.Empty;
+        LastPassesUsed = 0;
         LastWasCanceled = false;
 
         if (string.IsNullOrWhiteSpace(input))
@@ -83,7 +100,7 @@ public sealed class OvmlBuilder : IOvmlParser
         ct.ThrowIfCancellationRequested();
 
         // ── Pass 1 ───────────────────────────────────────────────────────────
-        var raw1 = CallApi(client, input, systemPrompt, ct);
+        var raw1 = await CallApiAsync(client, input, systemPrompt, ct);
         if (LastWasCanceled) return ParseResult.Empty;
 
         var p1 = TryParseJson(raw1);
@@ -102,12 +119,12 @@ public sealed class OvmlBuilder : IOvmlParser
         ct.ThrowIfCancellationRequested();
 
         // ── Pass 2 ───────────────────────────────────────────────────────────
-        var extSpot    = TryExtractSpotFromText(input) ?? TryFetchSpot(Safe(p1.Pair));
-        var modified   = input;
+        var extSpot = TryExtractSpotFromText(input) ?? TryFetchSpot(Safe(p1.Pair));
+        var modified = input;
         if (extSpot.HasValue)
             modified += " sp ref " + extSpot.Value.ToString(CultureInfo.InvariantCulture);
 
-        var raw2 = CallApi(client, modified, systemPrompt, ct);
+        var raw2 = await CallApiAsync(client, modified, systemPrompt, ct);
         if (LastWasCanceled) return Finish(p1); // return pass-1 result on cancel
 
         var p2 = TryParseJson(raw2);
@@ -125,10 +142,10 @@ public sealed class OvmlBuilder : IOvmlParser
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private string CallApi(ChatClient client, string userInput, string systemPrompt, CancellationToken ct)
+    private async Task<string> CallApiAsync(ChatClient client, string userInput, string systemPrompt, CancellationToken ct)
     {
-        var today    = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var sysText  = (systemPrompt ?? string.Empty).Replace("{{TODAY}}", today);
+        var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var sysText = (systemPrompt ?? string.Empty).Replace("{{TODAY}}", today);
         var userText = $"(Idag är {today}.) {userInput}";
 
         var messages = new List<ChatMessage>
@@ -139,9 +156,9 @@ public sealed class OvmlBuilder : IOvmlParser
 
         try
         {
-            var result = client.CompleteChatAsync(messages, cancellationToken: ct).GetAwaiter().GetResult();
-            return ((dynamic)result).Value.Content.Count > 0
-                ? ((dynamic)result).Value.Content[0].Text
+            var result = await client.CompleteChatAsync(messages, cancellationToken: ct);
+            return result.Value.Content.Count > 0
+                ? result.Value.Content[0].Text
                 : string.Empty;
         }
         catch (TaskCanceledException) when (ct.IsCancellationRequested)
@@ -218,14 +235,14 @@ public sealed class OvmlBuilder : IOvmlParser
 
         InferPutCall(po);
 
-        var pair     = string.IsNullOrWhiteSpace(Safe(po.Pair)) ? "UNKNOWN" : Safe(po.Pair).ToUpperInvariant();
+        var pair = string.IsNullOrWhiteSpace(Safe(po.Pair)) ? "UNKNOWN" : Safe(po.Pair).ToUpperInvariant();
         var priceCcy = pair.Length == 6 ? pair[3..] : string.Empty;
 
         var bs = po.Legs.Select(l => Safe(l?.BuySell).ToUpperInvariant() == "BUY" ? "B" : "S").ToList();
 
         var cps = po.Legs.Select(l =>
         {
-            var pc     = Safe(l?.PutCall).ToUpperInvariant();
+            var pc = Safe(l?.PutCall).ToUpperInvariant();
             var prefix = pc == "CALL" ? "C" : pc == "PUT" ? "P" : string.Empty;
             var strike = NormalizeStrike(Safe(l?.Strike));
             return string.IsNullOrEmpty(prefix) ? strike : prefix + strike;
@@ -247,8 +264,8 @@ public sealed class OvmlBuilder : IOvmlParser
 
         var parts = new List<string> { "OVML", pair, string.Join(",", bs), string.Join(",", cps) };
         if (!string.IsNullOrEmpty(notionalPart)) parts.Add(notionalPart);
-        if (!string.IsNullOrEmpty(expiry))       parts.Add(expiry);
-        if (!string.IsNullOrEmpty(priceCcy))     parts.Add("PC" + priceCcy);
+        if (!string.IsNullOrEmpty(expiry)) parts.Add(expiry);
+        if (!string.IsNullOrEmpty(priceCcy)) parts.Add("PC" + priceCcy);
         if (!string.IsNullOrEmpty(Safe(po.Spot))) parts.Add("SP" + Safe(po.Spot));
 
         return string.Join(" ", parts);
@@ -270,13 +287,13 @@ public sealed class OvmlBuilder : IOvmlParser
                     : string.Empty;
 
                 return new OvmlLeg(
-                    Pair:     pair,
-                    BuySell:  Safe(l?.BuySell),
-                    PutCall:  Safe(l?.PutCall),
-                    Strike:   NormalizeStrike(Safe(l?.Strike)),
+                    Pair: pair,
+                    BuySell: Safe(l?.BuySell),
+                    PutCall: Safe(l?.PutCall),
+                    Strike: NormalizeStrike(Safe(l?.Strike)),
                     Notional: ParseNotional(Safe(l?.Notional)),
-                    Expiry:   expiry,
-                    Spot:     spot);
+                    Expiry: expiry,
+                    Spot: spot);
             })
             .ToList();
     }
@@ -355,7 +372,7 @@ public sealed class OvmlBuilder : IOvmlParser
 
         try
         {
-            var dir    = Path.GetDirectoryName(promptFilePath);
+            var dir = Path.GetDirectoryName(promptFilePath);
             var keyPath = dir is not null ? Path.Combine(dir, "Key.txt") : null;
             if (keyPath is not null && File.Exists(keyPath))
                 return File.ReadAllText(keyPath).Trim();
@@ -385,20 +402,20 @@ public sealed class OvmlBuilder : IOvmlParser
 
     private sealed class ParsedLeg
     {
-        [JsonPropertyName("buySell")]  public string? BuySell  { get; set; }
-        [JsonPropertyName("putCall")]  public string? PutCall  { get; set; }
-        [JsonPropertyName("strike")]   public string? Strike   { get; set; }
+        [JsonPropertyName("buySell")] public string? BuySell { get; set; }
+        [JsonPropertyName("putCall")] public string? PutCall { get; set; }
+        [JsonPropertyName("strike")] public string? Strike { get; set; }
         [JsonPropertyName("notional")] public string? Notional { get; set; }
     }
 
     private sealed class ParsedOutput
     {
-        [JsonPropertyName("pair")]                    public string?       Pair                    { get; set; }
-        [JsonPropertyName("expiry")]                  public string?       Expiry                  { get; set; }
-        [JsonPropertyName("expiries")]                public List<string>? Expiries                { get; set; }
-        [JsonPropertyName("spot")]                    public string?       Spot                    { get; set; }
-        [JsonPropertyName("legs")]                    public List<ParsedLeg>? Legs                 { get; set; }
-        [JsonPropertyName("notionalInPriceCurrency")] public bool          NotionalInPriceCurrency { get; set; }
+        [JsonPropertyName("pair")] public string? Pair { get; set; }
+        [JsonPropertyName("expiry")] public string? Expiry { get; set; }
+        [JsonPropertyName("expiries")] public List<string>? Expiries { get; set; }
+        [JsonPropertyName("spot")] public string? Spot { get; set; }
+        [JsonPropertyName("legs")] public List<ParsedLeg>? Legs { get; set; }
+        [JsonPropertyName("notionalInPriceCurrency")] public bool NotionalInPriceCurrency { get; set; }
     }
 }
 

@@ -206,7 +206,10 @@ public partial class MainViewModel : ObservableObject
             if (!success)
             {
                 await SetStatusAsync("⏳ Regex failed — trying AI (GPT-4o)…");
-                success = _aiParser.TryParse(e.Text!, out ovml, out legs);
+                var aiResult = await _aiParser.TryParseAsync(e.Text!);
+                success = aiResult.Success;
+                ovml = aiResult.Ovml;
+                legs = aiResult.Legs;
                 usedAi = success;
             }
 
