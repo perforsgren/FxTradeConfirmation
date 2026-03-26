@@ -26,6 +26,11 @@ public sealed class BloombergPaster : IBloombergPaster
     /// <summary>Cached struct size — computed once at startup.</summary>
     private static readonly int InputSize = Marshal.SizeOf<INPUT>();
 
+    private readonly BloombergPasterOptions _options;
+
+    public BloombergPaster(BloombergPasterOptions? options = null)
+        => _options = options ?? new BloombergPasterOptions();
+
     public async Task<bool> PasteOvmlAsync(string ovmlText)
     {
         if (string.IsNullOrWhiteSpace(ovmlText))
@@ -45,7 +50,7 @@ public sealed class BloombergPaster : IBloombergPaster
 
         // ── 3. Open new tab: Ctrl+T ──────────────────────────────────────────
         SendKeyCombo(VK_CONTROL, VK_T);
-        await Task.Delay(150);
+        await Task.Delay(_options.NewTabDelayMs);
 
         // ── 4. Write OVML to clipboard ───────────────────────────────────────
         SuppressClipboardEvents?.Invoke(true);
@@ -60,14 +65,17 @@ public sealed class BloombergPaster : IBloombergPaster
             SuppressClipboardEvents?.Invoke(false);
         }
 
-        await Task.Delay(200);
+        await Task.Delay(_options.ClipboardSettleMs);
 
         // ── 5. Paste: Ctrl+V ─────────────────────────────────────────────────
         SendKeyCombo(VK_CONTROL, VK_V);
-        await Task.Delay(150);
+        await Task.Delay(_options.AfterPasteDelayMs);
 
         // ── 6. Execute: Enter ────────────────────────────────────────────────
         SendKey(VK_RETURN);
+
+        if (_options.VerifyPasteAsync is { } verify)
+            return await verify(CancellationToken.None);
 
         return true;
     }
@@ -114,8 +122,12 @@ public sealed class BloombergPaster : IBloombergPaster
         ShowWindow(hWnd, SW_RESTORE);
 
         // ALT trick: unlock the foreground lock that Windows imposes
-        keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
-        keybd_event(VK_MENU, 0, KEYEVENTF_KBD_KEYUP, UIntPtr.Zero);
+        INPUT[] altPulse =
+        [
+            MakeKeyInput(VK_MENU, 0),
+            MakeKeyInput(VK_MENU, KEYEVENTF_KEYUP),
+        ];
+        SendInput((uint)altPulse.Length, altPulse, InputSize);
 
         uint currentThreadId = GetCurrentThreadId();
         uint targetThreadId = GetWindowThreadProcessId(hWnd, out _);
@@ -168,25 +180,42 @@ public sealed class BloombergPaster : IBloombergPaster
     }
 
     // ── SendInput helpers ────────────────────────────────────────────────────
-    //
-    //  We use keybd_event for the actual keystroke injection instead of
-    //  SendInput. keybd_event is simpler, does not require struct packing,
-    //  and is proven reliable for inter-process key injection on Bloomberg.
-    //
 
     private static void SendKeyCombo(byte modifier, byte key)
     {
-        keybd_event(modifier, 0, 0, UIntPtr.Zero);                  // modifier down
-        keybd_event(key, 0, 0, UIntPtr.Zero);                  // key down
-        keybd_event(key, 0, KEYEVENTF_KBD_KEYUP, UIntPtr.Zero); // key up
-        keybd_event(modifier, 0, KEYEVENTF_KBD_KEYUP, UIntPtr.Zero); // modifier up
+        INPUT[] inputs =
+        [
+            MakeKeyInput(modifier, 0),
+        MakeKeyInput(key,      0),
+        MakeKeyInput(key,      KEYEVENTF_KEYUP),
+        MakeKeyInput(modifier, KEYEVENTF_KEYUP),
+    ];
+        SendInput((uint)inputs.Length, inputs, InputSize);
     }
 
     private static void SendKey(byte vk)
     {
-        keybd_event(vk, 0, 0, UIntPtr.Zero);
-        keybd_event(vk, 0, KEYEVENTF_KBD_KEYUP, UIntPtr.Zero);
+        INPUT[] inputs =
+        [
+            MakeKeyInput(vk, 0),
+        MakeKeyInput(vk, KEYEVENTF_KEYUP),
+    ];
+        SendInput((uint)inputs.Length, inputs, InputSize);
     }
+
+    private static INPUT MakeKeyInput(byte vk, uint flags) => new()
+    {
+        type = INPUT_KEYBOARD,
+        u = new InputUnion
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = vk,
+                wScan = (ushort)MapVirtualKey(vk, 0),
+                dwFlags = flags,
+            }
+        }
+    };
 
     // ── Win32 string helpers ─────────────────────────────────────────────────
 
@@ -209,13 +238,14 @@ public sealed class BloombergPaster : IBloombergPaster
     private const int GWL_EXSTYLE = -20;
     private const uint WS_EX_APPWINDOW = 0x00040000;
     private const int SW_RESTORE = 9;
-    private const uint KEYEVENTF_KBD_KEYUP = 0x0002;
+    private const uint KEYEVENTF_KEYUP    = 0x0002;   // replaces KEYEVENTF_KBD_KEYUP
 
     private const byte VK_MENU = 0x12;  // ALT
     private const byte VK_CONTROL = 0x11;
     private const byte VK_T = 0x54;
     private const byte VK_V = 0x56;
     private const byte VK_RETURN = 0x0D;
+    private const uint INPUT_KEYBOARD     = 1;
 
     // ── P/Invoke ─────────────────────────────────────────────────────────────
 
@@ -267,15 +297,6 @@ public sealed class BloombergPaster : IBloombergPaster
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
 
-    /// <summary>
-    /// Legacy keystroke injection API. Unlike SendInput, keybd_event does not
-    /// require correct INPUT struct sizing and is reliable for cross-process
-    /// key injection to Bloomberg Terminal.
-    /// </summary>
-    [DllImport("user32.dll")]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
-
-    // Keep SendInput available for future use but unused for now
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
@@ -306,4 +327,23 @@ public sealed class BloombergPaster : IBloombergPaster
         public uint time;
         public IntPtr dwExtraInfo;
     }
+}
+
+public sealed class BloombergPasterOptions
+{
+    /// <summary>Milliseconds to wait after opening a new tab (Ctrl+T).</summary>
+    public int NewTabDelayMs { get; init; } = 150;
+
+    /// <summary>Milliseconds to wait after writing to the clipboard.</summary>
+    public int ClipboardSettleMs { get; init; } = 200;
+
+    /// <summary>Milliseconds to wait after Ctrl+V before pressing Enter.</summary>
+    public int AfterPasteDelayMs { get; init; } = 150;
+
+    /// <summary>
+    /// Optional verification: called after Enter is sent.
+    /// Return true if the paste is confirmed, false to signal failure.
+    /// If null, the method always returns true (fire-and-forget).
+    /// </summary>
+    public Func<CancellationToken, Task<bool>>? VerifyPasteAsync { get; init; }
 }
