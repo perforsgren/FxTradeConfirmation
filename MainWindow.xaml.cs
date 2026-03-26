@@ -63,6 +63,9 @@ public partial class MainWindow : Window
                 .Select((row, i) => row.ToOvmlLeg(legs[i]))
                 .ToList();
 
+            // Use the dialog's current OVML which reflects any Buy/Sell or Call/Put toggles
+            var finalOvml = dialog.CurrentOvml;
+
             switch (dialog.Result)
             {
                 case ClipboardCaptureAction.PopulateUi:
@@ -71,12 +74,12 @@ public partial class MainWindow : Window
                     break;
 
                 case ClipboardCaptureAction.OpenInBloomberg:
-                    _ = vm.SendToBloombergAsync(ovml);
+                    _ = vm.SendToBloombergAsync(finalOvml);
                     break;
 
                 case ClipboardCaptureAction.Both:
                     vm.PopulateLegsFromParsed(finalLegs);
-                    _ = vm.SendToBloombergAsync(ovml);
+                    _ = vm.SendToBloombergAsync(finalOvml);
                     vm.StatusMessage = $"✓ Form filled + sent to Bloomberg — {finalLegs.Count} leg(s)";
                     break;
 

@@ -41,6 +41,23 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
         return !string.IsNullOrEmpty(ovml);
     }
 
+    /// <summary>
+    /// Rebuilds an OVML string from a list of <see cref="OvmlLeg"/> objects.
+    /// Used to regenerate the OVML after the user toggles Buy/Sell or Call/Put in the dialog.
+    /// </summary>
+    public static string RebuildOvml(IReadOnlyList<OvmlLeg> legs)
+    {
+        if (legs is not { Count: > 0 })
+            return string.Empty;
+
+        var first = legs[0];
+        var pair = string.IsNullOrWhiteSpace(first.Pair) ? "UNKNOWN" : first.Pair.ToUpperInvariant();
+        var spot = first.Spot ?? string.Empty;
+        var expiry = first.Expiry ?? string.Empty;
+
+        return BuildOvml(pair, expiry, spot, legs.ToList());
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────────
 
     private static string CleanInput(string text)

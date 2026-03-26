@@ -9,6 +9,65 @@
     <Border Background="{StaticResource BgCardBrush}"
             BorderBrush="{StaticResource AccentBlueBrush}"
             BorderThickness="1" CornerRadius="12" Padding="24">
+        <Border.Resources>
+
+            <!-- ── Dark context menu ── -->
+            <Style x:Key="DarkContextMenu" TargetType="ContextMenu">
+                <Setter Property="Background" Value="#FF1A2138"/>
+                <Setter Property="BorderBrush" Value="#FF2D3654"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="3"/>
+                <Setter Property="HasDropShadow" Value="True"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContextMenu">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    Padding="{TemplateBinding Padding}">
+                                <StackPanel IsItemsHost="True"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ── Dark menu item ── -->
+            <Style x:Key="DarkMenuItem" TargetType="MenuItem">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="#FFE2E8F0"/>
+                <Setter Property="FontFamily" Value="Segoe UI"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="bg"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}">
+                                <TextBlock Text="{TemplateBinding Header}"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           FontFamily="{TemplateBinding FontFamily}"
+                                           FontSize="{TemplateBinding FontSize}"
+                                           VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="#FF252D4A"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="#FF2563EB"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+        </Border.Resources>
+
         <StackPanel>
 
             <!-- ── Header ── -->
@@ -189,54 +248,10 @@
                            TextWrapping="Wrap"
                            ToolTip="Right-click to copy OVML">
                     <TextBlock.ContextMenu>
-                        <ContextMenu Background="#FF1E2642"
-                                     BorderBrush="#FF2D3654"
-                                     BorderThickness="1"
-                                     Padding="4">
-                            <ContextMenu.Resources>
-                                <Style TargetType="MenuItem">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="Foreground" Value="#FFE2E8F0"/>
-                                    <Setter Property="FontFamily" Value="Segoe UI"/>
-                                    <Setter Property="FontSize" Value="12"/>
-                                    <Setter Property="Padding" Value="10,6"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="MenuItem">
-                                                <Border x:Name="bg"
-                                                        Background="{TemplateBinding Background}"
-                                                        CornerRadius="4"
-                                                        Padding="{TemplateBinding Padding}">
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <ContentPresenter ContentSource="Icon"
-                                                                          VerticalAlignment="Center"
-                                                                          Margin="0,0,8,0"/>
-                                                        <ContentPresenter ContentSource="Header"
-                                                                          VerticalAlignment="Center"/>
-                                                    </StackPanel>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsHighlighted" Value="True">
-                                                        <Setter TargetName="bg" Property="Background"
-                                                                Value="#FF252D4A"/>
-                                                    </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="bg" Property="Background"
-                                                                Value="#FF2563EB"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ContextMenu.Resources>
-
-                            <MenuItem Header="Copy" Click="OvmlCopy_Click">
-                                <MenuItem.Icon>
-                                    <TextBlock Text="⎘" FontSize="12"
-                                               Foreground="#FF3B82F6"/>
-                                </MenuItem.Icon>
-                            </MenuItem>
+                        <ContextMenu Style="{StaticResource DarkContextMenu}">
+                            <MenuItem Header="⎘  Copy OVML"
+                                      Style="{StaticResource DarkMenuItem}"
+                                      Click="OvmlCopy_Click"/>
                         </ContextMenu>
                     </TextBlock.ContextMenu>
                 </TextBlock>

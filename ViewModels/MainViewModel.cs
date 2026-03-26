@@ -205,7 +205,7 @@ public partial class MainViewModel : ObservableObject
 
             if (!success)
             {
-                await SetStatusAsync("⏳ Regex failed — trying AI (GPT-4o)…");
+                await SetStatusAsync("⏳ Regex failed — trying AI");
                 var aiResult = await _aiParser.TryParseAsync(e.Text!);
                 success = aiResult.Success;
                 ovml = aiResult.Ovml;
@@ -219,8 +219,8 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
-            var method = usedAi ? "AI (GPT-4o)" : "regex";
-            await SetStatusAsync($"✓ Parsed via {method} — waiting for your action…");
+            var method = usedAi ? "AI" : "regex";
+            await SetStatusAsync($"✓ Parsed via {method} — waiting for your action.");
 
             // Use TCS to wait until the dialog is actually closed before releasing the lock
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

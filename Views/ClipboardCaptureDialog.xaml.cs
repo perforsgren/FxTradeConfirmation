@@ -15,6 +15,15 @@ public partial class ClipboardCaptureDialog : Window
     // Kept so MainWindow can read back the (possibly user-toggled) legs
     public IReadOnlyList<LegRow> ParsedLegs { get; private set; } = [];
 
+    /// <summary>
+    /// The current OVML string, rebuilt whenever the user toggles Buy/Sell or Call/Put.
+    /// MainWindow reads this for Bloomberg paste instead of the original static string.
+    /// </summary>
+    public string CurrentOvml { get; private set; } = string.Empty;
+
+    // Original OvmlLegs — needed to rebuild OVML with toggled values
+    private readonly IReadOnlyList<OvmlLeg> _originalLegs;
+
     public ClipboardCaptureDialog(
         ClipboardChangedEventArgs e,
         string ovml,
@@ -23,10 +32,13 @@ public partial class ClipboardCaptureDialog : Window
     {
         InitializeComponent();
 
+        _originalLegs = legs;
+        CurrentOvml = ovml;
+
         // ── Parse status badge ─────────────────────────────────────────────
         if (legs.Count > 0)
         {
-            var method = parsedByAi ? "AI (GPT-4o)" : "Regex";
+            var method = parsedByAi ? "AI" : "Regex";
             ParseStatusLabel.Text = $"✓  Parsed via {method}  —  {legs.Count} leg(s)";
             ParseStatusBorder.Background = new SolidColorBrush(Color.FromArgb(0x33, 0x10, 0xB9, 0x81));
             ParseStatusBorder.BorderBrush = (Brush)Application.Current.Resources["PositiveGreenBrush"];
@@ -64,13 +76,33 @@ public partial class ClipboardCaptureDialog : Window
     private void ToggleBuySell_Click(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is LegRow row)
+        {
             row.ToggleBuySell();
+            RebuildOvmlFromCurrentLegs();
+        }
     }
 
     private void ToggleCallPut_Click(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).Tag is LegRow row)
+        {
             row.ToggleCallPut();
+            RebuildOvmlFromCurrentLegs();
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the OVML string from the current (possibly toggled) leg rows
+    /// and updates both the displayed label and <see cref="CurrentOvml"/>.
+    /// </summary>
+    private void RebuildOvmlFromCurrentLegs()
+    {
+        var updatedLegs = ParsedLegs
+            .Select((row, i) => row.ToOvmlLeg(_originalLegs[i]))
+            .ToList();
+
+        CurrentOvml = OvmlBuilderAP3.RebuildOvml(updatedLegs);
+        OvmlLabel.Text = string.IsNullOrEmpty(CurrentOvml) ? "(no OVML generated)" : CurrentOvml;
     }
 
     // ── OVML context menu ─────────────────────────────────────────────────
