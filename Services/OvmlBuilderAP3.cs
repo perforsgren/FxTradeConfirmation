@@ -17,7 +17,8 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
     private static readonly Regex RxSpot        = new(@"(?ix)\b(?:sp(?:ot)?(?:\s*ref)?|ref|sr)\s*[:=]?\s*([+-]?(?:\d{1,3}(?:[.,]\d{3})*|\d+)(?:[.,]\d+)?)\b", RegexOptions.Compiled);
     private static readonly Regex RxExpiry      = new(@"expiry\s+(\d{1,2})\s*([A-Za-z]{3,})\s*(\d{4})?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex RxTenor       = new(@"\b(\d{1,2}[MWDmwd])\b",               RegexOptions.Compiled);
-    private static readonly Regex RxLeg         = new(@"\b(buy|köpa|sell|sälja)\b\s*(?:a)?\s*([0-9]*\.?[0-9]+)?\s*(call|put)?\s*(?:in\s*([0-9,\.]*\s*(m|mio|milj|M)?))?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex RxLeg         = new(@"\b(buy|köpa|sell|sälja)\b\s*(?:a)?\s*([0-9]*\.?[0-9]+[dD]?)?\s*(call|put)?\s*(?:in\s*([0-9,\.]*\s*(m|mio|milj|M)?))?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex RxDeltaStrike = new(@"^(\d+(?:\.\d+)?)[dD]$", RegexOptions.Compiled);
 
     public bool TryParse(string input, out string ovml, out IReadOnlyList<OvmlLeg> legs)
     {
@@ -118,8 +119,12 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
             var action   = m.Groups[1].Value.ToLowerInvariant();
             var buySell  = (action.StartsWith('b') || action.StartsWith('k')) ? "Buy" : "Sell";
             var putCall  = m.Groups[3].Value.ToLowerInvariant() switch { "call" => "Call", "put" => "Put", _ => string.Empty };
-            var strike   = TrimZeros(m.Groups[2].Value);
-            var notional = string.IsNullOrEmpty(m.Groups[4].Value) ? 0L : ConvertNotional(m.Groups[4].Value);
+            // Delta strikes stored as uppercase display form: "25d" → "25D"
+            var rawStrike = TrimZeros(m.Groups[2].Value);
+            var strike    = RxDeltaStrike.IsMatch(rawStrike)
+                ? rawStrike.ToUpperInvariant()
+                : rawStrike;
+            var notional  = string.IsNullOrEmpty(m.Groups[4].Value) ? 0L : ConvertNotional(m.Groups[4].Value);
 
             list.Add(new OvmlLeg(pair, buySell, putCall, strike, notional, expiry, spot));
         }
@@ -156,8 +161,16 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
 
         var buySells  = string.Join(",", legs.Select(l => l.BuySell.StartsWith('B') ? "B" : "S"));
         var strikes   = string.Join(",", legs.Select(l =>
-            string.IsNullOrEmpty(l.PutCall) ? l.Strike
-            : (l.PutCall.Equals("Call", StringComparison.OrdinalIgnoreCase) ? "C" : "P") + l.Strike));
+        {
+            var formatted = FormatStrike(l.Strike);
+            if (string.IsNullOrEmpty(l.PutCall)) return formatted;
+            var cp = l.PutCall.Equals("Call", StringComparison.OrdinalIgnoreCase) ? "C" : "P";
+            // Delta strikes (DF…) require a space: "P DF25"
+            // Absolute strikes stay concatenated: "P1.0850"
+            return formatted.StartsWith("DF", StringComparison.OrdinalIgnoreCase)
+                ? $"{cp} {formatted}"
+                : $"{cp}{formatted}";
+        }));
         var notionals = "N" + string.Join(",", legs.Select(l => ConvertToOvmlNotional(l.Notional)));
         var priceCcy  = pair.Length == 6 ? pair[3..].ToUpperInvariant() : string.Empty;
 
@@ -166,6 +179,21 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
         if (!string.IsNullOrEmpty(spot))     parts.Add("SP" + spot);
 
         return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Converts a delta-form strike (e.g. "25D") to OVML delta syntax "DF25".
+    /// Absolute strikes (e.g. "1.0850") are returned unchanged.
+    /// </summary>
+    private static string FormatStrike(string strike)
+    {
+        if (string.IsNullOrEmpty(strike)) return strike;
+
+        var m = RxDeltaStrike.Match(strike);
+        if (!m.Success) return strike;
+
+        var number = TrimZeros(m.Groups[1].Value);
+        return $"DF{number}";
     }
 
     // ── Numeric helpers ──────────────────────────────────────────────────────

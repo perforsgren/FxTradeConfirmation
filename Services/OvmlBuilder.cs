@@ -245,8 +245,12 @@ public sealed class OvmlBuilder : IOvmlParser
         {
             var pc = Safe(l?.PutCall).ToUpperInvariant();
             var prefix = pc == "CALL" ? "C" : pc == "PUT" ? "P" : string.Empty;
-            var strike = NormalizeStrike(Safe(l?.Strike));
-            return string.IsNullOrEmpty(prefix) ? strike : prefix + strike;
+            var strike = FormatStrikeForOvml(NormalizeStrike(Safe(l?.Strike)));
+            if (string.IsNullOrEmpty(prefix)) return strike;
+            // Delta strikes (DF…) require a space: "P DF25"
+            return strike.StartsWith("DF", StringComparison.OrdinalIgnoreCase)
+                ? $"{prefix} {strike}"
+                : $"{prefix}{strike}";
         }).ToList();
 
         var ns = po.Legs
@@ -362,13 +366,41 @@ public sealed class OvmlBuilder : IOvmlParser
         return raw;
     }
 
+    private static readonly Regex RxDeltaStrike = new(@"^(\d+(?:\.\d+)?)d$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Normalises a strike for display in the Legs list.
+    /// Delta strikes (e.g. "25d") are uppercased to "25D" but not converted to DF notation.
+    /// </summary>
     private static string NormalizeStrike(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return string.Empty;
         if (s.Trim().Equals("ATM", StringComparison.OrdinalIgnoreCase)) return "ATM";
+
+        // Delta strike: normalise casing for display ("25d" → "25D")
+        if (RxDeltaStrike.IsMatch(s.Trim()))
+            return s.Trim().ToUpperInvariant();
+
         if (!decimal.TryParse(s.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var d)) return s;
         var t = d.ToString(CultureInfo.InvariantCulture);
         return t.Contains('.') ? t.TrimEnd('0').TrimEnd('.') : t;
+    }
+
+    /// <summary>
+    /// Converts a strike to OVML syntax.
+    /// Delta strikes (e.g. "25D" or "25d") become "DF25".
+    /// Absolute strikes are returned unchanged.
+    /// </summary>
+    private static string FormatStrikeForOvml(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+        var dm = RxDeltaStrike.Match(s.Trim());
+        if (dm.Success)
+        {
+            var num = dm.Groups[1].Value.TrimEnd('0').TrimEnd('.');
+            return $"DF{num}";
+        }
+        return s;
     }
 
     private static long ParseNotional(string n)

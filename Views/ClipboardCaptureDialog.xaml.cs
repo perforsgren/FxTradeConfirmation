@@ -166,6 +166,8 @@ public partial class ClipboardCaptureDialog : Window
         public string Strike { get; }
         public string NotionalDisplay { get; }
 
+        private readonly bool _putCallUnknown;
+
         private string _buySell;
         private string _putCall;
 
@@ -187,13 +189,19 @@ public partial class ClipboardCaptureDialog : Window
 
         public Brush CallPutBrush => PutCall == "PUT"
             ? new SolidColorBrush(Color.FromArgb(0xFF, 0x4A, 0x1D, 0x5A))
-            : new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x3A, 0x6E));
+            : PutCall == "—"
+                ? new SolidColorBrush(Color.FromArgb(0xFF, 0x44, 0x44, 0x44))
+                : new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x3A, 0x6E));
 
         public LegRow(int number, OvmlLeg leg)
         {
             LegNumber = $"#{number}";
+
             _buySell = leg.BuySell.StartsWith("S", StringComparison.OrdinalIgnoreCase) ? "SELL" : "BUY";
-            _putCall = string.IsNullOrWhiteSpace(leg.PutCall) ? "—" : leg.PutCall.ToUpperInvariant();
+
+            _putCallUnknown = string.IsNullOrWhiteSpace(leg.PutCall);
+            _putCall = _putCallUnknown ? "—" : leg.PutCall.ToUpperInvariant();
+
             Strike = string.IsNullOrWhiteSpace(leg.Strike) ? "—" : leg.Strike;
 
             NotionalDisplay = leg.Notional >= 1_000_000
@@ -203,21 +211,28 @@ public partial class ClipboardCaptureDialog : Window
                     : "—";
         }
 
+        /// <summary>Cycles BUY → SELL → BUY.</summary>
         public void ToggleBuySell() =>
             BuySell = BuySell == "BUY" ? "SELL" : "BUY";
 
+        /// <summary>Cycles — → CALL → PUT → CALL.</summary>
         public void ToggleCallPut() =>
-            PutCall = PutCall == "CALL" ? "PUT" : _putCall == "—" ? "—" : "CALL";
+            PutCall = PutCall switch
+            {
+                "—"    => "CALL",
+                "CALL" => "PUT",
+                _      => "CALL"
+            };
 
         /// <summary>Converts back to OvmlLeg with any user-toggled values applied.</summary>
         public OvmlLeg ToOvmlLeg(OvmlLeg original) => original with
         {
             BuySell = BuySell == "SELL" ? "Sell" : "Buy",
-            PutCall = PutCall == "—" ? string.Empty : PutCall switch
+            PutCall = PutCall switch
             {
                 "CALL" => "Call",
-                "PUT" => "Put",
-                _ => original.PutCall
+                "PUT"  => "Put",
+                _      => original.PutCall
             }
         };
 
