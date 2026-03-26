@@ -33,6 +33,7 @@ public partial class MainWindow : Window
             _vm.Legs.CollectionChanged -= OnLegsCollectionChanged;
             _vm.PropertyChanged -= OnVmPropertyChanged;
             _vm.ClipboardCaptureDialogRequested -= OnClipboardCaptureDialogRequested;
+            _vm.BringToFrontRequested -= OnBringToFrontRequested;
         }
 
         _vm = e.NewValue as MainViewModel;
@@ -42,10 +43,22 @@ public partial class MainWindow : Window
             _vm.Legs.CollectionChanged += OnLegsCollectionChanged;
             _vm.PropertyChanged += OnVmPropertyChanged;
             _vm.ClipboardCaptureDialogRequested += OnClipboardCaptureDialogRequested;
+            _vm.BringToFrontRequested += OnBringToFrontRequested;
         }
     }
 
-    private async void OnClipboardCaptureDialogRequested(
+    private void OnBringToFrontRequested()
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+
+        Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
+    }
+
+    private void OnClipboardCaptureDialogRequested(
         ClipboardChangedEventArgs e,
         string ovml,
         IReadOnlyList<OvmlLeg> legs,
@@ -54,15 +67,6 @@ public partial class MainWindow : Window
     {
         try
         {
-            // Bring the main window to front before showing the dialog
-            if (WindowState == WindowState.Minimized)
-                WindowState = WindowState.Normal;
-
-            Activate();
-            Topmost = true;
-            Topmost = false;
-            Focus();
-
             var dialog = new ClipboardCaptureDialog(e, ovml, legs, parsedByAi) { Owner = this };
             dialog.ShowDialog();
 
@@ -83,13 +87,13 @@ public partial class MainWindow : Window
                     break;
 
                 case ClipboardCaptureAction.OpenInBloomberg:
-                    await vm.SendToBloombergAsync(finalOvml);
+                    _ = vm.SendToBloombergAsync(finalOvml);
                     break;
 
                 case ClipboardCaptureAction.Both:
                     vm.PopulateLegsFromParsed(finalLegs);
+                    _ = vm.SendToBloombergAsync(finalOvml);
                     vm.StatusMessage = $"✓ Form filled + sent to Bloomberg — {finalLegs.Count} leg(s)";
-                    await vm.SendToBloombergAsync(finalOvml);
                     break;
 
                 case ClipboardCaptureAction.Reject:
