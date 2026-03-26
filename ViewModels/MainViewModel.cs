@@ -20,6 +20,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IOptionQueryFilter? _optionQueryFilter;
     private readonly IOvmlParser _regexParser;
     private readonly IOvmlParser _aiParser;
+    private readonly IBloombergPaster? _bloombergPaster;
 
     /// <summary>
     /// When true, clipboard events from our own paste operations are suppressed.
@@ -40,17 +41,19 @@ public partial class MainViewModel : ObservableObject
         IClipboardWatcher? clipboardWatcher = null,
         IOptionQueryFilter? optionQueryFilter = null,
         IOvmlParser? regexParser = null,
-        IOvmlParser? aiParser = null)
+        IOvmlParser? aiParser = null,
+        IBloombergPaster? bloombergPaster = null)
     {
-        DatabaseService      = databaseService;
-        _emailService        = emailService;
-        _ingestService       = ingestService;
-        _recentTradeService  = recentTradeService;
-        _clipboardWatcher    = clipboardWatcher;
-        _optionQueryFilter   = optionQueryFilter;
-        _regexParser         = regexParser ?? new OvmlBuilderAP3();
-        _aiParser            = aiParser    ?? new OvmlBuilder(
+        DatabaseService = databaseService;
+        _emailService = emailService;
+        _ingestService = ingestService;
+        _recentTradeService = recentTradeService;
+        _clipboardWatcher = clipboardWatcher;
+        _optionQueryFilter = optionQueryFilter;
+        _regexParser = regexParser ?? new OvmlBuilderAP3();
+        _aiParser = aiParser ?? new OvmlBuilder(
             promptFilePath: @"\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\Settings\FxTradeConfirmation\Prompt.txt");
+        _bloombergPaster = bloombergPaster;
         ReferenceData = new ReferenceData();
 
         if (_clipboardWatcher != null)
@@ -234,6 +237,51 @@ public partial class MainViewModel : ObservableObject
     private Task SetStatusAsync(string message) =>
         Application.Current.Dispatcher.InvokeAsync(() => StatusMessage = message).Task;
 
+    // --- Bloomberg Paster ---
+
+    /// <summary>
+    /// Sends the given OVML text to the Bloomberg Terminal window.
+    /// Called from the clipboard capture dialog handler and can also
+    /// be triggered manually from the UI.
+    /// </summary>
+    public async Task<bool> SendToBloombergAsync(string ovmlText)
+    {
+        if (_bloombergPaster == null)
+        {
+            StatusMessage = "Bloomberg paster not available.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(ovmlText))
+        {
+            StatusMessage = "No OVML text to send.";
+            return false;
+        }
+
+        StatusMessage = "⏳ Sending to Bloomberg…";
+
+        _suppressClipboardEvents = true;
+        try
+        {
+            var ok = await _bloombergPaster.PasteOvmlAsync(ovmlText);
+
+            StatusMessage = ok
+                ? "✓ OVML sent to Bloomberg Terminal"
+                : "⚠ Bloomberg Terminal not found — is it running?";
+
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"⚠ Bloomberg paste failed: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            _suppressClipboardEvents = false;
+        }
+    }
+
     // --- Initialization ---
 
     private async Task InitializeAsync()
@@ -388,7 +436,7 @@ public partial class MainViewModel : ObservableObject
             return;
         }
 
-        StatusMessage = "Saving trades…" ;
+        StatusMessage = "Saving trades…";
 
         try
         {
@@ -960,14 +1008,14 @@ public partial class MainViewModel : ObservableObject
             if (Legs.Count > 0)
             {
                 var leg1 = Legs[0];
-                vm.Trader             = leg1.Trader;
-                vm.Sales              = leg1.Sales;
-                vm.ReportingEntity    = leg1.ReportingEntity;
+                vm.Trader = leg1.Trader;
+                vm.Sales = leg1.Sales;
+                vm.ReportingEntity = leg1.ReportingEntity;
                 vm.InvestmentDecisionID = leg1.InvestmentDecisionID;
-                vm.ExecutionTime      = leg1.ExecutionTime;
-                vm.Mic                = leg1.Mic;
-                vm.Broker             = leg1.Broker;
-                vm.BookCalypso        = leg1.BookCalypso;
+                vm.ExecutionTime = leg1.ExecutionTime;
+                vm.Mic = leg1.Mic;
+                vm.Broker = leg1.Broker;
+                vm.BookCalypso = leg1.BookCalypso;
             }
 
             vm.ApplyFromOvmlLeg(ovmlLeg);

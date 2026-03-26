@@ -46,9 +46,13 @@ public partial class App : Application
         var regexParser       = new OvmlBuilderAP3();
         var aiParser          = new OvmlBuilder(Path.Combine(settingsRoot, "Prompt.txt"));
 
+        // Bloomberg Terminal paster — sends OVML commands to the BBG window
+        var bloombergPaster = new BloombergPaster();
+
         var viewModel = new MainViewModel(
             dbService, emailService, ingestService, recentTradeService,
-            clipboardWatcher, optionQueryFilter, regexParser, aiParser);
+            clipboardWatcher, optionQueryFilter, regexParser, aiParser,
+            bloombergPaster);
 
         var window = new MainWindow { DataContext = viewModel };
         window.Show();

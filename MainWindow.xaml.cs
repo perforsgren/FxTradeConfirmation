@@ -71,12 +71,13 @@ public partial class MainWindow : Window
                     break;
 
                 case ClipboardCaptureAction.OpenInBloomberg:
-                    vm.StatusMessage = "Bloomberg pricer — not yet implemented";
+                    _ = vm.SendToBloombergAsync(ovml);
                     break;
 
                 case ClipboardCaptureAction.Both:
                     vm.PopulateLegsFromParsed(finalLegs);
-                    vm.StatusMessage = $"✓ Form filled — Bloomberg pricer pending ({finalLegs.Count} leg(s))";
+                    _ = vm.SendToBloombergAsync(ovml);
+                    vm.StatusMessage = $"✓ Form filled + sent to Bloomberg — {finalLegs.Count} leg(s)";
                     break;
 
                 case ClipboardCaptureAction.Reject:
