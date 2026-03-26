@@ -70,8 +70,10 @@
 
         <StackPanel>
 
-            <!-- ── Header ── -->
-            <DockPanel Margin="0,0,0,16">
+            <!-- ── Header (draggable) ── -->
+            <DockPanel Margin="0,0,0,16" Background="Transparent"
+                       MouseLeftButtonDown="Header_MouseLeftButtonDown"
+                       Cursor="SizeAll">
                 <Button Content="✕" DockPanel.Dock="Right"
                         Style="{StaticResource IconButton}"
                         Foreground="{StaticResource TextMutedBrush}"
@@ -274,28 +276,150 @@
             <Border BorderBrush="{StaticResource BorderSubtleBrush}"
                     BorderThickness="0,1,0,0" Padding="0,14,0,0">
                 <UniformGrid Rows="1" Columns="4">
+
+                    <!-- Reject — dämpad röd outline -->
                     <Button Content="✕  Reject"
                             Style="{StaticResource TradingButton}"
-                            Background="{StaticResource NegativeRedDarkBrush}"
-                            BorderBrush="{StaticResource NegativeRedBrush}"
-                            Click="Reject_Click" Margin="0,0,6,0"/>
-                    <Button x:Name="BloombergButton"
-                            Content="📊  Bloomberg"
-                            Style="{StaticResource TradingButton}"
-                            Background="{StaticResource BgMediumBrush}"
-                            BorderBrush="{StaticResource BorderDefaultBrush}"
-                            Click="Bloomberg_Click" Margin="0,0,6,0"
-                            ToolTip="Open in Bloomberg Pricer only"/>
+                            Background="#22EF4444"
+                            BorderBrush="#99EF4444"
+                            BorderThickness="1"
+                            Foreground="#FFEF9090"
+                            Click="Reject_Click" Margin="0,0,6,0"
+                            ToolTip="Dismiss this request (Esc)">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="border"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="6"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="#44EF4444"/>
+                                        <Setter TargetName="border" Property="BorderBrush" Value="#FFEF4444"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="#66EF4444"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+
+
+                    <!-- Fill Form — ghost/muted -->
                     <Button x:Name="PopulateButton"
                             Content="✓  Fill Form"
                             Style="{StaticResource TradingButton}"
+                            Background="Transparent"
+                            BorderBrush="{StaticResource BorderDefaultBrush}"
+                            BorderThickness="1"
+                            Foreground="{StaticResource TextSecondaryBrush}"
                             Click="Populate_Click" Margin="0,0,6,0"
-                            ToolTip="Fill the trade form with parsed legs"/>
-                    <Button x:Name="BothButton"
-                            Content="⚡  Both"
+                            ToolTip="Fill the trade form with parsed legs">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="border"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="6"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                        <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <!-- Bloomberg — ghost/muted (identisk stil som Fill Form) -->
+                    <Button x:Name="BloombergButton"
+                            Content="📊  Bloomberg"
                             Style="{StaticResource TradingButton}"
+                            Background="Transparent"
+                            BorderBrush="{StaticResource BorderDefaultBrush}"
+                            BorderThickness="1"
+                            Foreground="{StaticResource TextSecondaryBrush}"
+                            Click="Bloomberg_Click" Margin="0,0,6,0"
+                            ToolTip="Open in Bloomberg Pricer only">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="border"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="6"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                        <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <!-- Fill & Price — dämpad blå outline (primär men inte skrikig) -->
+                    <Button x:Name="BothButton"
+                            Content="⚡  Fill &amp; Price"
+                            Style="{StaticResource TradingButton}"
+                            Background="#223B82F6"
+                            BorderBrush="#993B82F6"
+                            BorderThickness="1"
+                            Foreground="#FF93B4F8"
+                            Padding="16,10"
+                            FontSize="13"
                             Click="Both_Click"
-                            ToolTip="Fill form and open in Bloomberg Pricer"/>
+                            ToolTip="Fill the trade form and open in Bloomberg Pricer">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="border"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        CornerRadius="6"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="#443B82F6"/>
+                                        <Setter TargetName="border" Property="BorderBrush" Value="#FF3B82F6"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="border" Property="Background" Value="#663B82F6"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
                 </UniformGrid>
             </Border>
 

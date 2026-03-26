@@ -3,9 +3,10 @@ using FxTradeConfirmation.Services;
 using FxTradeConfirmation.ViewModels;
 using FxTradeConfirmation.Views;
 using System.ComponentModel;
+using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Shapes;
 
 namespace FxTradeConfirmation;
 
@@ -13,12 +14,63 @@ public partial class MainWindow : Window
 {
     private MainViewModel? _vm;
 
+    private static readonly string _settingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "FxTradeConfirmation",
+        "MainWindowPos.json");
+
+    private sealed record WindowPosition(double Left, double Top);
+
     public MainWindow()
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
         Loaded += OnLoaded;
         StateChanged += OnStateChanged;
+        Closing += (_, _) => SavePosition();
+
+        RestorePosition();
+    }
+
+    private void SavePosition()
+    {
+        try
+        {
+            if (WindowState != WindowState.Normal)
+                return;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(_settingsPath)!);
+            File.WriteAllText(_settingsPath, JsonSerializer.Serialize(new WindowPosition(Left, Top)));
+        }
+        catch { }
+    }
+
+    private void RestorePosition()
+    {
+        try
+        {
+            if (!File.Exists(_settingsPath))
+                return;
+
+            var pos = JsonSerializer.Deserialize<WindowPosition>(File.ReadAllText(_settingsPath));
+            if (pos is null)
+                return;
+
+            const double minVisible = 50;
+            bool onScreen =
+                pos.Left + minVisible >= SystemParameters.VirtualScreenLeft
+             && pos.Left <= SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth - minVisible
+             && pos.Top + minVisible >= SystemParameters.VirtualScreenTop
+             && pos.Top <= SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight - minVisible;
+
+            if (!onScreen)
+                return;
+
+            WindowStartupLocation = WindowStartupLocation.Manual;
+            Left = pos.Left;
+            Top = pos.Top;
+        }
+        catch { }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -65,49 +117,51 @@ public partial class MainWindow : Window
         bool parsedByAi,
         Action completed)
     {
-        try
+        var dialog = new ClipboardCaptureDialog(e, ovml, legs, parsedByAi) { Owner = this };
+
+        dialog.Show();
+
+        dialog.Closed += (_, _) =>
         {
-            var dialog = new ClipboardCaptureDialog(e, ovml, legs, parsedByAi) { Owner = this };
-            dialog.ShowDialog();
-
-            var vm = (MainViewModel)DataContext;
-
-            var finalLegs = dialog.ParsedLegs
-                .Select((row, i) => row.ToOvmlLeg(legs[i]))
-                .ToList();
-
-            // Use the dialog's current OVML which reflects any Buy/Sell or Call/Put toggles
-            var finalOvml = dialog.CurrentOvml;
-
-            switch (dialog.Result)
+            try
             {
-                case ClipboardCaptureAction.PopulateUi:
-                    vm.PopulateLegsFromParsed(finalLegs);
-                    vm.StatusMessage = $"✓ Form filled — {finalLegs.Count} leg(s) via {(parsedByAi ? "AI" : "regex")}";
-                    break;
+                var vm = (MainViewModel)DataContext;
 
-                case ClipboardCaptureAction.OpenInBloomberg:
-                    _ = vm.SendToBloombergAsync(finalOvml);
-                    break;
+                var finalLegs = dialog.ParsedLegs
+                    .Select((row, i) => row.ToOvmlLeg(legs[i]))
+                    .ToList();
 
-                case ClipboardCaptureAction.Both:
-                    vm.PopulateLegsFromParsed(finalLegs);
-                    _ = vm.SendToBloombergAsync(finalOvml);
-                    vm.StatusMessage = $"✓ Form filled + sent to Bloomberg — {finalLegs.Count} leg(s)";
-                    break;
+                var finalOvml = dialog.CurrentOvml;
 
-                case ClipboardCaptureAction.Reject:
-                    vm.StatusMessage = "Option request rejected.";
-                    break;
+                switch (dialog.Result)
+                {
+                    case ClipboardCaptureAction.PopulateUi:
+                        vm.PopulateLegsFromParsed(finalLegs);
+                        vm.StatusMessage = $"✓ Form filled — {finalLegs.Count} leg(s) via {(parsedByAi ? "AI" : "regex")}";
+                        break;
+
+                    case ClipboardCaptureAction.OpenInBloomberg:
+                        _ = vm.SendToBloombergAsync(finalOvml);
+                        break;
+
+                    case ClipboardCaptureAction.Both:
+                        vm.PopulateLegsFromParsed(finalLegs);
+                        _ = vm.SendToBloombergAsync(finalOvml);
+                        vm.StatusMessage = $"✓ Form filled + sent to Bloomberg — {finalLegs.Count} leg(s)";
+                        break;
+
+                    case ClipboardCaptureAction.Reject:
+                        vm.StatusMessage = "Option request rejected.";
+                        break;
+                }
+
+                vm.ClipboardWatcher?.ResetLastSignature();
             }
-
-            // Allow the same text to be captured again if the user copies it once more
-            vm.ClipboardWatcher?.ResetLastSignature();
-        }
-        finally
-        {
-            completed();
-        }
+            finally
+            {
+                completed();
+            }
+        };
     }
 
     private void OnLegsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
@@ -121,7 +175,6 @@ public partial class MainWindow : Window
             FitToContent();
     }
 
-    // --- Window chrome button handlers ---
     private void OnMinimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
 
     private void OnMaximizeRestore(object sender, RoutedEventArgs e) =>
@@ -131,14 +184,13 @@ public partial class MainWindow : Window
 
     private void OnStateChanged(object? sender, EventArgs e)
     {
-        if (MaximizeIcon is Path icon)
+        if (MaximizeIcon is System.Windows.Shapes.Path icon)
         {
             icon.Data = WindowState == WindowState.Maximized
                 ? Geometry.Parse("M 0 3 H 7 V 10 H 0 Z M 3 3 V 0 H 10 V 7 H 7")
                 : Geometry.Parse("M 0 0 H 10 V 10 H 0 Z");
         }
 
-        // Remove rounded corners when maximized
         if (WindowState == WindowState.Maximized)
         {
             RootBorder.CornerRadius = new CornerRadius(0);
@@ -179,16 +231,10 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// Re-triggers SizeToContent so the window grows or shrinks to fit the current content.
-    /// Forces an invalidate + layout pass first so collapsed elements are fully measured at zero height.
-    /// Clamps the result to the current screen's work area so the window never overflows.
-    /// </summary>
     private void FitToContent()
     {
         Dispatcher.BeginInvoke(() =>
         {
-            // Force WPF to re-measure everything (collapsed rows → 0 height)
             InvalidateMeasure();
             InvalidateArrange();
             UpdateLayout();

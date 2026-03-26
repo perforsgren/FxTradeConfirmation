@@ -271,7 +271,7 @@ public sealed class OvmlBuilder : IOvmlParser
         if (!string.IsNullOrEmpty(notionalPart)) parts.Add(notionalPart);
         if (!string.IsNullOrEmpty(expiry)) parts.Add(expiry);
         if (!string.IsNullOrEmpty(priceCcy)) parts.Add("PC" + priceCcy);
-        if (!string.IsNullOrEmpty(Safe(po.Spot))) parts.Add("SP" + Safe(po.Spot));
+        if (!string.IsNullOrEmpty(Safe(po.Spot))) parts.Add("SP" + Safe(po.Spot).Replace(',', '.'));
 
         return string.Join(" ", parts);
     }

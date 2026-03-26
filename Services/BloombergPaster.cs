@@ -14,8 +14,24 @@ public sealed class BloombergPaster : IBloombergPaster
 {
     private static readonly HashSet<string> ForbiddenFirstWords = new(StringComparer.OrdinalIgnoreCase)
     {
-        "IB", "MSG", "CHAT", "SETTINGS", "HELP", "ALERT"
+        "IB", "MSG", "CHAT", "SETTINGS", "HELP", "ALERT", "BLRT"
     };
+
+    /// <summary>
+    /// Substrings that identify non-terminal Bloomberg windows.
+    /// These are always skipped even if they pass the first-word check.
+    /// </summary>
+    private static readonly string[] ForbiddenTitleParts =
+    [
+        "Alert Catcher",
+        "Fading Toast",
+        "Launchpad",
+        "Upgrade",
+        "Warning:",
+        "BLOOMBERG:",   // "BLOOMBERG: Login"
+        "News Alerts",
+        "Economic Alerts",
+    ];
 
     /// <summary>
     /// Callback invoked around clipboard writes so the app's own
@@ -27,6 +43,12 @@ public sealed class BloombergPaster : IBloombergPaster
     private static readonly int InputSize = Marshal.SizeOf<INPUT>();
 
     private readonly BloombergPasterOptions _options;
+
+    /// <summary>
+    /// Caches the last known good Bloomberg Terminal window handle.
+    /// Re-validated on each call; cleared if the window no longer exists.
+    /// </summary>
+    private static IntPtr _cachedTerminalHwnd;
 
     public BloombergPaster(BloombergPasterOptions? options = null)
         => _options = options ?? new BloombergPasterOptions();
@@ -41,7 +63,7 @@ public sealed class BloombergPaster : IBloombergPaster
         if (hwnd == IntPtr.Zero)
             return false;
 
-        // ── 2. Activate Bloomberg (restores if minimised/hidden) ─────────────
+        // ── 2. Activate Bloomberg (restores if minimised/hidden behind others) 
         await Application.Current.Dispatcher.InvokeAsync(() =>
         {
             GetWindowThreadProcessId(hwnd, out uint bbPid);
@@ -89,24 +111,39 @@ public sealed class BloombergPaster : IBloombergPaster
     // ── Bloomberg window discovery ───────────────────────────────────────────
 
     /// <summary>
-    /// Enumerates ALL top-level windows — no IsWindowVisible filter.
-    /// Matches on window class, title (forbidden words) and WS_EX_APPWINDOW.
-    /// This finds the Bloomberg Terminal whether it is visible, behind other
-    /// windows, minimised (iconic), or hidden (SW_HIDE).
+    /// Finds the Bloomberg Terminal window. Strategy:
+    /// 1. Check cached handle — if it's still a valid wdmm-Win32Window, use it.
+    /// 2. Enumerate all top-level windows, matching on class + filtering out
+    ///    known non-terminal windows via <see cref="ForbiddenFirstWords"/> and
+    ///    <see cref="ForbiddenTitleParts"/>.
+    /// 3. Among remaining candidates, prefer the one that is visible.
     /// </summary>
     private static IntPtr FindBloombergWindow()
     {
-        IntPtr found = IntPtr.Zero;
+        // ── Try cached handle first ──────────────────────────────────────────
+        if (_cachedTerminalHwnd != IntPtr.Zero)
+        {
+            if (IsWindow(_cachedTerminalHwnd) &&
+                GetWindowClassString(_cachedTerminalHwnd) == "wdmm-Win32Window")
+            {
+                Debug.WriteLine($"[BloombergPaster] Using cached HWND=0x{_cachedTerminalHwnd:X8}");
+                return _cachedTerminalHwnd;
+            }
+
+            Debug.WriteLine($"[BloombergPaster] Cached HWND=0x{_cachedTerminalHwnd:X8} is stale — clearing.");
+            _cachedTerminalHwnd = IntPtr.Zero;
+        }
+
+        // ── Full scan ────────────────────────────────────────────────────────
+        IntPtr bestVisible = IntPtr.Zero;
+        IntPtr bestHidden = IntPtr.Zero;
 
         EnumWindows((hWnd, _) =>
         {
-            var cls = GetWindowClassString(hWnd);
-            if (cls != "wdmm-Win32Window")
+            if (GetWindowClassString(hWnd) != "wdmm-Win32Window")
                 return true;
 
             var title = GetWindowTitleString(hWnd);
-
-            // Skip empty-title windows (background/helper windows Bloomberg creates)
             if (string.IsNullOrWhiteSpace(title))
                 return true;
 
@@ -114,15 +151,35 @@ public sealed class BloombergPaster : IBloombergPaster
             if (words.Length > 0 && ForbiddenFirstWords.Contains(words[0]))
                 return true;
 
-            uint exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
-            if ((exStyle & WS_EX_APPWINDOW) == 0)
+            if (ForbiddenTitleParts.Any(p => title.Contains(p, StringComparison.OrdinalIgnoreCase)))
                 return true;
 
-            found = hWnd;
-            return false;
+            var visible = IsWindowVisible(hWnd);
+            Debug.WriteLine($"[BloombergPaster]   0x{hWnd:X8}  CANDIDATE  Visible={visible,-5}  Title=\"{title}\"");
+
+            if (visible)
+            {
+                if (bestVisible == IntPtr.Zero)
+                    bestVisible = hWnd;
+            }
+            else
+            {
+                if (bestHidden == IntPtr.Zero)
+                    bestHidden = hWnd;
+            }
+
+            return true; // keep scanning to find all candidates
         }, IntPtr.Zero);
 
-        return found;
+        // Prefer visible, fall back to hidden/minimised
+        var selected = bestVisible != IntPtr.Zero ? bestVisible : bestHidden;
+        _cachedTerminalHwnd = selected;
+
+        Debug.WriteLine(selected != IntPtr.Zero
+            ? $"[BloombergPaster] ── Selected HWND=0x{selected:X8} ─────────────────────────"
+            : "[BloombergPaster] ── No Bloomberg window found ──────────────────────────");
+
+        return selected;
     }
 
     // ── Wait for foreground ──────────────────────────────────────────────────
@@ -214,8 +271,6 @@ public sealed class BloombergPaster : IBloombergPaster
 
     // ── Constants ────────────────────────────────────────────────────────────
 
-    private const int GWL_EXSTYLE = -20;
-    private const uint WS_EX_APPWINDOW = 0x00040000;
     private const int SW_RESTORE = 9;
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
@@ -233,14 +288,19 @@ public sealed class BloombergPaster : IBloombergPaster
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindow(IntPtr hWnd);
+
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowLong(IntPtr hWnd, int nIndex);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -266,7 +326,7 @@ public sealed class BloombergPaster : IBloombergPaster
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
-    // ── SendInput structures ─────────────────────────────────────────────────
+    // ── Structs ───────────────────────────────────────────────────────────────
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT

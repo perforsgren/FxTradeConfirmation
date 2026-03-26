@@ -159,6 +159,9 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
             expiry = dt.ToString("MM/dd/yy", CultureInfo.InvariantCulture);
         }
 
+        // Normalise spot: ensure decimal separator is always a dot (AI parser may return comma)
+        spot = spot.Replace(',', '.');
+
         var buySells = string.Join(",", legs.Select(l => l.BuySell.StartsWith('B') ? "B" : "S"));
         var strikes = string.Join(",", legs.Select(l =>
         {
