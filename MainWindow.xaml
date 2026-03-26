@@ -217,30 +217,44 @@
                     BorderThickness="0,1,0,0">
                 <DockPanel>
                     <TextBlock Text="{Binding StatusMessage}"
-                               Foreground="{StaticResource TextMutedBrush}" FontSize="11"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"
                                VerticalAlignment="Center"/>
 
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                 HorizontalAlignment="Right" VerticalAlignment="Center">
 
-                        <!-- Clipboard watcher toggle -->
-                        <TextBlock Cursor="Hand"
-                                   FontSize="11" FontFamily="{StaticResource MonoFont}"
-                                   VerticalAlignment="Center" Margin="0,0,12,0"
-                                   MouseLeftButtonUp="OnClipboardWatcherToggleClick">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="● CLIP OFF"/>
-                                    <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding ClipboardAutoEnabled}" Value="True">
-                                            <Setter Property="Text" Value="● CLIP ON"/>
-                                            <Setter Property="Foreground" Value="{StaticResource SolvingAmberBrush}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                        <!-- Bloomberg watcher toggle -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                    Cursor="Hand" Margin="0,0,-10,0"
+                                    MouseLeftButtonUp="OnClipboardWatcherToggleClick">
+                            <Ellipse Width="7" Height="7" Margin="0,0,5,0" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{StaticResource TextMutedBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ClipboardAutoEnabled}" Value="True">
+                                                <Setter Property="Fill" Value="{StaticResource SolvingAmberBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock FontSize="11" FontFamily="{StaticResource MonoFont}"
+                                       VerticalAlignment="Center" Width="155">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="BLOOMBERG WATCHER OFF"/>
+                                        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ClipboardAutoEnabled}" Value="True">
+                                                <Setter Property="Text" Value="BLOOMBERG WATCHER ON "/>
+                                                <Setter Property="Foreground" Value="{StaticResource SolvingAmberBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
 
                         <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
                         <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToConnectionText}}"

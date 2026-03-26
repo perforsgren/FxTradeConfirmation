@@ -38,10 +38,10 @@ public sealed class OvmlBuilder : IOvmlParser
     public int LastPassesUsed { get; private set; }
     public bool LastWasCanceled { get; private set; }
 
-    public OvmlBuilder(string promptFilePath, string? apiKey = null, string model = "gpt-5.4-mini")   //gpt-4o
+    public OvmlBuilder(string promptFilePath, string? apiKey = null, string model = "gpt-5.4-mini")   
     {
         _promptFilePath = promptFilePath;
-        _model = string.IsNullOrWhiteSpace(model) ? "gpt-5.4-mini" : model;  //gpt-4o
+        _model = string.IsNullOrWhiteSpace(model) ? "gpt-5.4-mini" : model;
         _apiKey = ResolveApiKey(apiKey, promptFilePath);
     }
 

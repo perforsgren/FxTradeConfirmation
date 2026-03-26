@@ -157,7 +157,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (_clipboardWatcher == null)
         {
-            StatusMessage = "Clipboard watcher not available.";
+            StatusMessage = "Bloomberg chat watcher not available.";
             return;
         }
 
@@ -165,13 +165,13 @@ public partial class MainViewModel : ObservableObject
         {
             _clipboardWatcher.Stop();
             ClipboardAutoEnabled = false;
-            StatusMessage = "Clipboard watcher stopped.";
+            StatusMessage = "Bloomberg chat watcher stopped.";
         }
         else
         {
             _clipboardWatcher.Start();
             ClipboardAutoEnabled = true;
-            StatusMessage = "Clipboard watcher active — listening for copies…";
+            StatusMessage = "Bloomberg chat watcher active.";
         }
     }
 

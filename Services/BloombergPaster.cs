@@ -186,10 +186,10 @@ public sealed class BloombergPaster : IBloombergPaster
         INPUT[] inputs =
         [
             MakeKeyInput(modifier, 0),
-        MakeKeyInput(key,      0),
-        MakeKeyInput(key,      KEYEVENTF_KEYUP),
-        MakeKeyInput(modifier, KEYEVENTF_KEYUP),
-    ];
+            MakeKeyInput(key,      0),
+            MakeKeyInput(key,      KEYEVENTF_KEYUP),
+            MakeKeyInput(modifier, KEYEVENTF_KEYUP),
+        ];
         SendInput((uint)inputs.Length, inputs, InputSize);
     }
 
@@ -198,8 +198,8 @@ public sealed class BloombergPaster : IBloombergPaster
         INPUT[] inputs =
         [
             MakeKeyInput(vk, 0),
-        MakeKeyInput(vk, KEYEVENTF_KEYUP),
-    ];
+            MakeKeyInput(vk, KEYEVENTF_KEYUP),
+        ];
         SendInput((uint)inputs.Length, inputs, InputSize);
     }
 
