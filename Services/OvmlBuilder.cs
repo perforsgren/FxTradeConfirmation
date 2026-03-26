@@ -119,7 +119,8 @@ public sealed class OvmlBuilder : IOvmlParser
         ct.ThrowIfCancellationRequested();
 
         // ── Pass 2 ───────────────────────────────────────────────────────────
-        var extSpot = TryExtractSpotFromText(input) ?? TryFetchSpot(Safe(p1.Pair));
+        var extSpot = TryExtractSpotFromText(input)
+           ?? await TryFetchSpotAsync(Safe(p1.Pair), ct);
         var modified = input;
         if (extSpot.HasValue)
             modified += " sp ref " + extSpot.Value.ToString(CultureInfo.InvariantCulture);
@@ -316,8 +317,25 @@ public sealed class OvmlBuilder : IOvmlParser
         return decimal.TryParse(norm, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : null;
     }
 
-    private static decimal? TryFetchSpot(string pair) =>
-        IsValidPair(pair) ? BloombergFx.GetFxSpotMid(pair) : null;
+    private static async Task<decimal?> TryFetchSpotAsync(string pair, CancellationToken ct)
+    {
+        if (!IsValidPair(pair))
+            return null;
+
+        // Hard ceiling: never let BLPAPI block the parse flow for more than 6 seconds
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(6));
+
+        try
+        {
+            return await BloombergFx.GetFxSpotMidAsync(pair, ct: cts.Token);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // BLPAPI timed out but the caller didn't cancel — treat as "no spot"
+            return null;
+        }
+    }
 
     private static string NormalizeFxNumber(string raw)
     {
