@@ -150,6 +150,11 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public event Action<ClipboardChangedEventArgs, string, IReadOnlyList<OvmlLeg>, bool, Action>? ClipboardCaptureDialogRequested;
 
+    /// <summary>
+    /// Raised as soon as clipboard parsing begins, so the view can bring itself to front immediately.
+    /// </summary>
+    public event Action? BringToFrontRequested;
+
     // --- Clipboard Watcher ---
 
     [RelayCommand]
@@ -198,6 +203,9 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
+            // Bring MainWindow to front immediately when parsing starts
+            Application.Current.Dispatcher.Invoke(() => BringToFrontRequested?.Invoke());
+
             await SetStatusAsync("⏳ Parsing…");
 
             bool usedAi = false;

@@ -41,11 +41,12 @@ public sealed class BloombergPaster : IBloombergPaster
         if (hwnd == IntPtr.Zero)
             return false;
 
-        // ── 2. Activate Bloomberg ────────────────────────────────────────────
-        ActivateWindow(hwnd);
+        // ── 2. Activate Bloomberg (restores if minimised/hidden) ─────────────
+        ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
 
-        // Wait until Bloomberg actually has foreground focus (up to 2 s)
-        if (!await WaitForForegroundAsync(hwnd, timeoutMs: 2000))
+        // Wait until Bloomberg actually has foreground focus (up to 3 s)
+        if (!await WaitForForegroundAsync(hwnd, timeoutMs: 3000))
             return false;
 
         // ── 3. Open new tab: Ctrl+T ──────────────────────────────────────────
@@ -82,6 +83,11 @@ public sealed class BloombergPaster : IBloombergPaster
 
     // ── Bloomberg window discovery ───────────────────────────────────────────
 
+    /// <summary>
+    /// Enumerates all visible top-level windows looking for the Bloomberg
+    /// Terminal main window. Uses the same proven approach as the legacy app:
+    /// IsWindowVisible + class/title/exstyle filtering.
+    /// </summary>
     private static IntPtr FindBloombergWindow()
     {
         IntPtr found = IntPtr.Zero;
@@ -112,41 +118,7 @@ public sealed class BloombergPaster : IBloombergPaster
         return found;
     }
 
-    // ── Window activation ────────────────────────────────────────────────────
-
-    private static void ActivateWindow(IntPtr hWnd)
-    {
-        GetWindowThreadProcessId(hWnd, out uint targetPid);
-        AllowSetForegroundWindow(targetPid);
-
-        ShowWindow(hWnd, SW_RESTORE);
-
-        // ALT trick: unlock the foreground lock that Windows imposes
-        INPUT[] altPulse =
-        [
-            MakeKeyInput(VK_MENU, 0),
-            MakeKeyInput(VK_MENU, KEYEVENTF_KEYUP),
-        ];
-        SendInput((uint)altPulse.Length, altPulse, InputSize);
-
-        uint currentThreadId = GetCurrentThreadId();
-        uint targetThreadId = GetWindowThreadProcessId(hWnd, out _);
-
-        bool attached = false;
-        if (currentThreadId != targetThreadId)
-            attached = AttachThreadInput(currentThreadId, targetThreadId, true);
-
-        try
-        {
-            SetForegroundWindow(hWnd);
-            BringWindowToTop(hWnd);
-        }
-        finally
-        {
-            if (attached)
-                AttachThreadInput(currentThreadId, targetThreadId, false);
-        }
-    }
+    // ── Wait for foreground ──────────────────────────────────────────────────
 
     private static async Task<bool> WaitForForegroundAsync(IntPtr targetHwnd, int timeoutMs)
     {
@@ -238,14 +210,14 @@ public sealed class BloombergPaster : IBloombergPaster
     private const int GWL_EXSTYLE = -20;
     private const uint WS_EX_APPWINDOW = 0x00040000;
     private const int SW_RESTORE = 9;
-    private const uint KEYEVENTF_KEYUP    = 0x0002;   // replaces KEYEVENTF_KBD_KEYUP
+    private const uint KEYEVENTF_KEYUP = 0x0002;
 
     private const byte VK_MENU = 0x12;  // ALT
     private const byte VK_CONTROL = 0x11;
     private const byte VK_T = 0x54;
     private const byte VK_V = 0x56;
     private const byte VK_RETURN = 0x0D;
-    private const uint INPUT_KEYBOARD     = 1;
+    private const uint INPUT_KEYBOARD = 1;
 
     // ── P/Invoke ─────────────────────────────────────────────────────────────
 
@@ -280,22 +252,7 @@ public sealed class BloombergPaster : IBloombergPaster
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool BringWindowToTop(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AllowSetForegroundWindow(uint dwProcessId);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-
-    [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
@@ -303,7 +260,7 @@ public sealed class BloombergPaster : IBloombergPaster
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
-    // ── SendInput structures (kept for potential future use) ──────────────────
+    // ── SendInput structures ─────────────────────────────────────────────────
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT

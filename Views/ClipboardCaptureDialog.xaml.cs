@@ -156,6 +156,23 @@ public partial class ClipboardCaptureDialog : Window
         return raw.ToUpperInvariant();
     }
 
+    private static string FormatStrike(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw) || raw == "—")
+            return "—";
+
+        if (decimal.TryParse(raw, NumberStyles.Any,
+                CultureInfo.InvariantCulture, out var d))
+        {
+            // Minst 2 decimaler, men behåll befintliga om fler finns
+            int existingDecimals = raw.Contains('.') ? raw.Length - raw.IndexOf('.') - 1 : 0;
+            int decimals = Math.Max(2, existingDecimals);
+            return d.ToString($"F{decimals}", CultureInfo.InvariantCulture);
+        }
+
+        return raw;
+    }
+
     // ── LegRow — mutable, notifies UI on toggle ───────────────────────────
 
     public sealed class LegRow : INotifyPropertyChanged
@@ -202,7 +219,7 @@ public partial class ClipboardCaptureDialog : Window
             _putCallUnknown = string.IsNullOrWhiteSpace(leg.PutCall);
             _putCall = _putCallUnknown ? "—" : leg.PutCall.ToUpperInvariant();
 
-            Strike = string.IsNullOrWhiteSpace(leg.Strike) ? "—" : leg.Strike;
+            Strike = FormatStrike(leg.Strike);
 
             NotionalDisplay = leg.Notional >= 1_000_000
                 ? $"{leg.Notional / 1_000_000:0.##}M"

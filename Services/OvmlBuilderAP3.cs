@@ -159,24 +159,28 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
             expiry = dt.ToString("MM/dd/yy", CultureInfo.InvariantCulture);
         }
 
-        var buySells  = string.Join(",", legs.Select(l => l.BuySell.StartsWith('B') ? "B" : "S"));
-        var strikes   = string.Join(",", legs.Select(l =>
+        var buySells = string.Join(",", legs.Select(l => l.BuySell.StartsWith('B') ? "B" : "S"));
+        var strikes = string.Join(",", legs.Select(l =>
         {
             var formatted = FormatStrike(l.Strike);
             if (string.IsNullOrEmpty(l.PutCall)) return formatted;
             var cp = l.PutCall.Equals("Call", StringComparison.OrdinalIgnoreCase) ? "C" : "P";
-            // Delta strikes (DF…) require a space: "P DF25"
-            // Absolute strikes stay concatenated: "P1.0850"
             return formatted.StartsWith("DF", StringComparison.OrdinalIgnoreCase)
                 ? $"{cp} {formatted}"
                 : $"{cp}{formatted}";
         }));
-        var notionals = "N" + string.Join(",", legs.Select(l => ConvertToOvmlNotional(l.Notional)));
-        var priceCcy  = pair.Length == 6 ? pair[3..].ToUpperInvariant() : string.Empty;
+
+        // Write a single notional when all legs share the same value, otherwise comma-separate
+        var notionalValues = legs.Select(l => ConvertToOvmlNotional(l.Notional)).ToList();
+        var notionals = "N" + (notionalValues.Distinct().Count() == 1
+            ? notionalValues[0]
+            : string.Join(",", notionalValues));
+
+        var priceCcy = pair.Length == 6 ? pair[3..].ToUpperInvariant() : string.Empty;
 
         var parts = new List<string> { "OVML", pair, buySells, strikes, notionals, expiry };
         if (!string.IsNullOrEmpty(priceCcy)) parts.Add("PC" + priceCcy);
-        if (!string.IsNullOrEmpty(spot))     parts.Add("SP" + spot);
+        if (!string.IsNullOrEmpty(spot)) parts.Add("SP" + spot);
 
         return string.Join(" ", parts);
     }

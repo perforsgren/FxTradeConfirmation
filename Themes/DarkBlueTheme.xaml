@@ -1123,7 +1123,9 @@
     </Style>
 
     <!-- ==================== TOOLTIP (dark themed) ==================== -->
-    <Style x:Key="DarkTooltip" TargetType="ToolTip">
+
+    <!-- Global implicit style — applies to ALL ToolTips in the app -->
+    <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{StaticResource BgDarkBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderDefaultBrush}"/>
@@ -1152,5 +1154,8 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- Named variant (kept for explicit opt-in if needed) -->
+    <Style x:Key="DarkTooltip" TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}"/>
 
 </ResourceDictionary>

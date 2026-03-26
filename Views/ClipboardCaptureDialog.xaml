@@ -143,6 +143,7 @@
                                 BorderBrush="{StaticResource BorderSubtleBrush}"
                                 BorderThickness="1" CornerRadius="6"
                                 Padding="12,10" Margin="0,0,0,6">
+
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="24"/>
@@ -158,64 +159,74 @@
                                            FontFamily="{StaticResource MonoFont}"
                                            FontSize="10"
                                            Foreground="{StaticResource TextMutedBrush}"
-                                           VerticalAlignment="Center"/>
+                                           VerticalAlignment="Bottom"
+                                           Margin="0,0,0,2"/>
 
-                                <!-- Buy / Sell — toggleable button -->
-                                <Button Grid.Column="1"
-                                        Content="{Binding BuySell}"
-                                        Background="{Binding BuySellBrush}"
-                                        Foreground="{StaticResource TextWhiteBrush}"
-                                        BorderThickness="0"
-                                        FontFamily="{StaticResource MonoFont}"
-                                        FontSize="11" FontWeight="Bold"
-                                        Padding="6,3" Cursor="Hand"
-                                        HorizontalAlignment="Left"
-                                        VerticalAlignment="Center"
-                                        ToolTip="Click to toggle Buy / Sell"
-                                        Tag="{Binding}"
-                                        Click="ToggleBuySell_Click">
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="4"
-                                                    Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center"
-                                                                  VerticalAlignment="Center"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                </Button>
+                                <!-- Buy / Sell -->
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="SIDE" FontSize="8"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
+                                    <Button Content="{Binding BuySell}"
+                                            Background="{Binding BuySellBrush}"
+                                            Foreground="{StaticResource TextWhiteBrush}"
+                                            BorderThickness="0"
+                                            FontFamily="{StaticResource MonoFont}"
+                                            FontSize="11" FontWeight="Bold"
+                                            Padding="6,3" Cursor="Hand"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            ToolTip="Click to toggle Buy / Sell"
+                                            Tag="{Binding}"
+                                            Click="ToggleBuySell_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </StackPanel>
 
-                                <!-- Call / Put — toggleable button -->
-                                <Button Grid.Column="2"
-                                        Content="{Binding PutCall}"
-                                        Background="{Binding CallPutBrush}"
-                                        Foreground="{StaticResource TextWhiteBrush}"
-                                        BorderThickness="0"
-                                        FontFamily="{StaticResource MonoFont}"
-                                        FontSize="11" FontWeight="Bold"
-                                        Padding="6,3" Cursor="Hand"
-                                        HorizontalAlignment="Left"
-                                        VerticalAlignment="Center"
-                                        ToolTip="Click to toggle Call / Put"
-                                        Tag="{Binding}"
-                                        Click="ToggleCallPut_Click">
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="4"
-                                                    Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center"
-                                                                  VerticalAlignment="Center"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                </Button>
+                                <!-- Call / Put -->
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <TextBlock Text="TYPE" FontSize="8"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
+                                    <Button Content="{Binding PutCall}"
+                                            Background="{Binding CallPutBrush}"
+                                            Foreground="{StaticResource TextWhiteBrush}"
+                                            BorderThickness="0"
+                                            FontFamily="{StaticResource MonoFont}"
+                                            FontSize="11" FontWeight="Bold"
+                                            Padding="6,3" Cursor="Hand"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            ToolTip="Click to toggle Call / Put"
+                                            Tag="{Binding}"
+                                            Click="ToggleCallPut_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </StackPanel>
 
                                 <!-- Strike -->
                                 <StackPanel Grid.Column="3" VerticalAlignment="Center" Margin="8,0,0,0">
                                     <TextBlock Text="STRIKE" FontSize="8"
-                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
                                     <TextBlock Text="{Binding Strike}"
                                                FontFamily="{StaticResource MonoFont}"
                                                FontSize="13" FontWeight="SemiBold"
@@ -225,13 +236,15 @@
                                 <!-- Notional -->
                                 <StackPanel Grid.Column="4" VerticalAlignment="Center" Margin="8,0,0,0">
                                     <TextBlock Text="NOTIONAL" FontSize="8"
-                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
                                     <TextBlock Text="{Binding NotionalDisplay}"
                                                FontFamily="{StaticResource MonoFont}"
                                                FontSize="13"
                                                Foreground="{StaticResource TextSecondaryBrush}"/>
                                 </StackPanel>
                             </Grid>
+
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -266,11 +279,6 @@
                             Background="{StaticResource NegativeRedDarkBrush}"
                             BorderBrush="{StaticResource NegativeRedBrush}"
                             Click="Reject_Click" Margin="0,0,6,0"/>
-                    <Button x:Name="BothButton"
-                            Content="⚡  Both"
-                            Style="{StaticResource TradingButton}"
-                            Click="Both_Click" Margin="0,0,6,0"
-                            ToolTip="Fill form and open in Bloomberg Pricer"/>
                     <Button x:Name="BloombergButton"
                             Content="📊  Bloomberg"
                             Style="{StaticResource TradingButton}"
@@ -281,8 +289,13 @@
                     <Button x:Name="PopulateButton"
                             Content="✓  Fill Form"
                             Style="{StaticResource TradingButton}"
-                            Click="Populate_Click"
+                            Click="Populate_Click" Margin="0,0,6,0"
                             ToolTip="Fill the trade form with parsed legs"/>
+                    <Button x:Name="BothButton"
+                            Content="⚡  Both"
+                            Style="{StaticResource TradingButton}"
+                            Click="Both_Click"
+                            ToolTip="Fill form and open in Bloomberg Pricer"/>
                 </UniformGrid>
             </Border>
 
