@@ -12,26 +12,21 @@ namespace FxTradeConfirmation.Services;
 /// </summary>
 public sealed class BloombergPaster : IBloombergPaster
 {
-    private static readonly HashSet<string> ForbiddenFirstWords = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "IB", "MSG", "CHAT", "SETTINGS", "HELP", "ALERT", "BLRT"
-    };
+    /// <summary>
+    /// The terminal window must have at least this many child windows.
+    /// In practice the terminal has 20+ children; all other APPWIN Bloomberg
+    /// windows have ≤ 3.  A threshold of 10 provides a safe margin.
+    /// </summary>
+    private const int MinTerminalChildCount = 10;
 
     /// <summary>
-    /// Substrings that identify non-terminal Bloomberg windows.
-    /// These are always skipped even if they pass the first-word check.
+    /// First words that identify known non-terminal Bloomberg APPWIN windows.
+    /// Used as a lightweight guard before the child-count check.
     /// </summary>
-    private static readonly string[] ForbiddenTitleParts =
-    [
-        "Alert Catcher",
-        "Fading Toast",
-        "Launchpad",
-        "Upgrade",
-        "Warning:",
-        "BLOOMBERG:",   // "BLOOMBERG: Login"
-        "News Alerts",
-        "Economic Alerts",
-    ];
+    private static readonly HashSet<string> KnownNonTerminalFirstWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "IB", "BLRT", "BLOOMBERG:",
+    };
 
     /// <summary>
     /// Callback invoked around clipboard writes so the app's own
@@ -112,11 +107,11 @@ public sealed class BloombergPaster : IBloombergPaster
 
     /// <summary>
     /// Finds the Bloomberg Terminal window. Strategy:
-    /// 1. Check cached handle — if it's still a valid wdmm-Win32Window, use it.
-    /// 2. Enumerate all top-level windows, matching on class + filtering out
-    ///    known non-terminal windows via <see cref="ForbiddenFirstWords"/> and
-    ///    <see cref="ForbiddenTitleParts"/>.
-    /// 3. Among remaining candidates, prefer the one that is visible.
+    /// 1. Check cached handle — if still a valid terminal candidate, reuse it.
+    /// 2. Enumerate all top-level "wdmm-Win32Window" windows and score them via
+    ///    <see cref="IsTerminalCandidate"/>. Pick the one with the most children.
+    /// 3. If no window clears <see cref="MinTerminalChildCount"/>, fall back to
+    ///    the highest-child-count structural match (handles terminal startup).
     /// </summary>
     private static IntPtr FindBloombergWindow()
     {
@@ -124,19 +119,21 @@ public sealed class BloombergPaster : IBloombergPaster
         if (_cachedTerminalHwnd != IntPtr.Zero)
         {
             if (IsWindow(_cachedTerminalHwnd) &&
-                GetWindowClassString(_cachedTerminalHwnd) == "wdmm-Win32Window")
-            {
-                Debug.WriteLine($"[BloombergPaster] Using cached HWND=0x{_cachedTerminalHwnd:X8}");
+                GetWindowClassString(_cachedTerminalHwnd) == "wdmm-Win32Window" &&
+                IsTerminalCandidate(_cachedTerminalHwnd, out _))
                 return _cachedTerminalHwnd;
-            }
 
-            Debug.WriteLine($"[BloombergPaster] Cached HWND=0x{_cachedTerminalHwnd:X8} is stale — clearing.");
             _cachedTerminalHwnd = IntPtr.Zero;
         }
 
         // ── Full scan ────────────────────────────────────────────────────────
-        IntPtr bestVisible = IntPtr.Zero;
-        IntPtr bestHidden = IntPtr.Zero;
+        // bestHwnd     = highest child count passing ALL criteria (incl. floor)
+        // fallbackHwnd = highest child count passing structural criteria only,
+        //                used if terminal hasn't fully initialised yet
+        IntPtr bestHwnd = IntPtr.Zero;
+        int bestChildCount = 0;
+        IntPtr fallbackHwnd = IntPtr.Zero;
+        int fallbackChildCount = 0;
 
         EnumWindows((hWnd, _) =>
         {
@@ -147,39 +144,77 @@ public sealed class BloombergPaster : IBloombergPaster
             if (string.IsNullOrWhiteSpace(title))
                 return true;
 
-            var words = title.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (words.Length > 0 && ForbiddenFirstWords.Contains(words[0]))
-                return true;
-
-            if (ForbiddenTitleParts.Any(p => title.Contains(p, StringComparison.OrdinalIgnoreCase)))
-                return true;
-
-            var visible = IsWindowVisible(hWnd);
-            Debug.WriteLine($"[BloombergPaster]   0x{hWnd:X8}  CANDIDATE  Visible={visible,-5}  Title=\"{title}\"");
-
-            if (visible)
+            if (IsTerminalCandidate(hWnd, out int childCount))
             {
-                if (bestVisible == IntPtr.Zero)
-                    bestVisible = hWnd;
+                if (childCount > bestChildCount)
+                {
+                    bestChildCount = childCount;
+                    bestHwnd = hWnd;
+                }
             }
             else
             {
-                if (bestHidden == IntPtr.Zero)
-                    bestHidden = hWnd;
+                // Passes structural checks but below the child-count floor —
+                // track as fallback in case terminal hasn't fully initialised.
+                var exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+                var style = GetWindowLong(hWnd, GWL_STYLE);
+                bool structuralMatch = (exStyle & WS_EX_APPWINDOW) != 0
+                    && (exStyle & WS_EX_TOOLWINDOW) == 0
+                    && (style & WS_THICKFRAME) != 0;
+
+                if (structuralMatch)
+                {
+                    var firstWord = title.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+                    if (!KnownNonTerminalFirstWords.Contains(firstWord) && childCount > fallbackChildCount)
+                    {
+                        fallbackChildCount = childCount;
+                        fallbackHwnd = hWnd;
+                    }
+                }
             }
 
-            return true; // keep scanning to find all candidates
+            return true;
         }, IntPtr.Zero);
 
-        // Prefer visible, fall back to hidden/minimised
-        var selected = bestVisible != IntPtr.Zero ? bestVisible : bestHidden;
-        _cachedTerminalHwnd = selected;
+        _cachedTerminalHwnd = bestHwnd != IntPtr.Zero ? bestHwnd : fallbackHwnd;
+        return _cachedTerminalHwnd;
+    }
 
-        Debug.WriteLine(selected != IntPtr.Zero
-            ? $"[BloombergPaster] ── Selected HWND=0x{selected:X8} ─────────────────────────"
-            : "[BloombergPaster] ── No Bloomberg window found ──────────────────────────");
+    /// <summary>
+    /// Determines whether <paramref name="hWnd"/> has the structural
+    /// properties of the Bloomberg Terminal main window:
+    /// <list type="bullet">
+    ///   <item><c>WS_EX_APPWINDOW</c> — appears in the taskbar.</item>
+    ///   <item>NOT <c>WS_EX_TOOLWINDOW</c> — rules out panels/graphs.</item>
+    ///   <item><c>WS_THICKFRAME</c> — resizable main window.</item>
+    ///   <item>Title does not start with a known non-terminal first word (e.g. "IB").</item>
+    ///   <item>Child count ≥ <see cref="MinTerminalChildCount"/>.</item>
+    /// </list>
+    /// </summary>
+    private static bool IsTerminalCandidate(IntPtr hWnd, out int childCount)
+    {
+        childCount = 0;
 
-        return selected;
+        var exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+        if ((exStyle & WS_EX_APPWINDOW) == 0)
+            return false;
+        if ((exStyle & WS_EX_TOOLWINDOW) != 0)
+            return false;
+
+        var style = GetWindowLong(hWnd, GWL_STYLE);
+        if ((style & WS_THICKFRAME) == 0)
+            return false;
+
+        var title = GetWindowTitleString(hWnd);
+        var firstWord = title.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+        if (KnownNonTerminalFirstWords.Contains(firstWord))
+            return false;
+
+        int count = 0;
+        EnumChildWindows(hWnd, (child, lp) => { count++; return true; }, IntPtr.Zero);
+        childCount = count;
+
+        return childCount >= MinTerminalChildCount;
     }
 
     // ── Wait for foreground ──────────────────────────────────────────────────
@@ -280,13 +315,25 @@ public sealed class BloombergPaster : IBloombergPaster
     private const byte VK_RETURN = 0x0D;
     private const uint INPUT_KEYBOARD = 1;
 
+    private const int GWL_STYLE = -16;
+    private const int GWL_EXSTYLE = -20;
+
+    private const long WS_THICKFRAME = 0x00040000L;
+    private const long WS_EX_TOOLWINDOW = 0x00000080L;
+    private const long WS_EX_APPWINDOW = 0x00040000L;
+
     // ── P/Invoke ─────────────────────────────────────────────────────────────
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    private delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -325,6 +372,9 @@ public sealed class BloombergPaster : IBloombergPaster
 
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern long GetWindowLong(IntPtr hWnd, int nIndex);
 
     // ── Structs ───────────────────────────────────────────────────────────────
 
