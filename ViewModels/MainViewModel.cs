@@ -5,6 +5,7 @@ using FxTradeConfirmation.Models;
 using FxTradeConfirmation.Services;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Diagnostics;
 using System.Data;
 using System.Windows;
 
@@ -64,7 +65,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Start with one leg
         AddLegInternal();
 
-        _ = InitializeAsync();
+        InitializeAsync().FireAndForget(
+            onError: msg => StatusMessage = $"⚠ Startup error: {msg}");
     }
 
     // --- State ---
@@ -198,7 +200,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
 
         // Run parsing off the UI thread so the watcher is never blocked
-        _ = Task.Run(() => RunClipboardFlowAsync(e));
+        Task.Run(() => RunClipboardFlowAsync(e))
+            .FireAndForget(onError: msg => StatusMessage = $"⚠ Clipboard error: {msg}");
     }
 
     private async Task RunClipboardFlowAsync(ClipboardChangedEventArgs e)
@@ -301,37 +304,46 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     private async Task InitializeAsync()
     {
-        await RefreshConnectionAsync();
-        if (IsConnected)
-        {
-            var data = await DatabaseService.LoadReferenceDataAsync();
-
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                ReferenceData = data;
-                _regexParser = new OvmlBuilderAP3(ReferenceData.CurrencyPairs);  // ← uppdatera med riktiga par
-            });
-
-            await SetupUserDefaults();
-
-            foreach (var leg in Legs)
-                await leg.LoadPortfolioForCurrentPairAsync();
-        }
-
-        // Load holiday calendar (from AHS SQL Server, independent of MySQL connection)
         try
         {
-            Holidays = await DatabaseService.LoadHolidaysAsync();
-        }
-        catch
-        {
-            // Fallback: empty table — date parsing will still work for direct dates
-            Holidays = new DataTable();
-            Holidays.Columns.Add("Market", typeof(string));
-            Holidays.Columns.Add("HolidayDate", typeof(DateTime));
-        }
+            await RefreshConnectionAsync();
+            if (IsConnected)
+            {
+                var data = await DatabaseService.LoadReferenceDataAsync();
 
-        StartConnectionMonitor();
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    ReferenceData = data;
+                    _regexParser = new OvmlBuilderAP3(ReferenceData.CurrencyPairs);
+                });
+
+                await SetupUserDefaults();
+
+                foreach (var leg in Legs)
+                    await leg.LoadPortfolioForCurrentPairAsync();
+            }
+
+            // Load holiday calendar (from AHS SQL Server, independent of MySQL connection)
+            try
+            {
+                Holidays = await DatabaseService.LoadHolidaysAsync();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[MainViewModel] Holidays load failed: {ex.Message}");
+                Holidays = new DataTable();
+                Holidays.Columns.Add("Market", typeof(string));
+                Holidays.Columns.Add("HolidayDate", typeof(DateTime));
+            }
+
+            StartConnectionMonitor();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[MainViewModel] InitializeAsync failed: {ex.Message}");
+            await SetStatusAsync($"⚠ Initialization failed: {ex.Message}");
+            throw; // re-throw so FireAndForget.onError can display it
+        }
     }
 
     private async Task SetupUserDefaults()

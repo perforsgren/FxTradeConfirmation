@@ -9,13 +9,15 @@ namespace FxTradeConfirmation.Services;
 public interface IOvmlParser
 {
     /// <summary>
-    /// Attempts to parse <paramref name="input"/> into an OVML string and legs.
+    /// Synchronous parse. Suitable for fast, CPU-bound implementations (e.g. regex).
+    /// AI-backed implementations should throw <see cref="NotSupportedException"/> and
+    /// direct callers to <see cref="TryParseAsync"/> instead.
     /// </summary>
-    /// <returns>True if parsing produced a non-empty result.</returns>
     bool TryParse(string input, out string ovml, out IReadOnlyList<OvmlLeg> legs);
 
     /// <summary>
-    /// Async version of <see cref="TryParse"/>. Default implementation delegates to the sync version.
+    /// Async parse. Preferred entry point for all implementations that perform I/O.
+    /// The default delegates to the synchronous version for CPU-bound parsers.
     /// </summary>
     Task<(bool Success, string Ovml, IReadOnlyList<OvmlLeg> Legs)> TryParseAsync(
         string input, CancellationToken ct = default)

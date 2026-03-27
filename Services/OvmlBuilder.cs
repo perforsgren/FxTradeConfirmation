@@ -45,18 +45,19 @@ public sealed class OvmlBuilder : IOvmlParser
         _apiKey = ResolveApiKey(apiKey, promptFilePath);
     }
 
-    // ── IOvmlParser (sync — safe bridge via Task.Run) ────────────────────────
+    // ── IOvmlParser (sync — NOT supported for AI parser) ─────────────────────
 
+    /// <summary>
+    /// Not supported on the AI parser — always throws.
+    /// Use <see cref="TryParseAsync"/> instead.
+    /// </summary>
+    /// <exception cref="NotSupportedException">Always thrown.</exception>
+    [Obsolete("OvmlBuilder performs network I/O. Use TryParseAsync instead.", error: true)]
     public bool TryParse(string input, out string ovml, out IReadOnlyList<OvmlLeg> legs)
-    {
-        // Task.Run strips the SynchronizationContext, so the inner await can never deadlock.
-        var result = Task.Run(() => TryParseAsync(input, CancellationToken.None)).GetAwaiter().GetResult();
-        ovml = result.Ovml;
-        legs = result.Legs;
-        return result.Success;
-    }
+        => throw new NotSupportedException(
+            "OvmlBuilder performs OpenAI network I/O and cannot be called synchronously. Use TryParseAsync instead.");
 
-    // ── IOvmlParser (async — preferred entry point) ──────────────────────────
+    // ── IOvmlParser (async — only entry point) ───────────────────────────────
 
     public async Task<(bool Success, string Ovml, IReadOnlyList<OvmlLeg> Legs)> TryParseAsync(
         string input, CancellationToken ct = default)
@@ -76,14 +77,7 @@ public sealed class OvmlBuilder : IOvmlParser
         }
     }
 
-    // ── Core generation (sync bridge) ────────────────────────────────────────
-
-    public ParseResult Generate(string input, string systemPrompt, CancellationToken ct)
-    {
-        return Task.Run(() => GenerateAsync(input, systemPrompt, ct), ct).GetAwaiter().GetResult();
-    }
-
-    // ── Core generation (async) ──────────────────────────────────────────────
+    // ── Core generation (async only) ─────────────────────────────────────────
 
     public async Task<ParseResult> GenerateAsync(string input, string systemPrompt, CancellationToken ct)
     {
