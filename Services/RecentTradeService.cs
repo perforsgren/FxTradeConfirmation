@@ -125,7 +125,21 @@ public class RecentTradeService : IRecentTradeService
     private async Task WriteIndexCoreAsync(RecentTradeIndex index)
     {
         var json = JsonSerializer.Serialize(index, JsonOptions);
-        await File.WriteAllTextAsync(_indexPath, json);
+
+        // Atomic commit: write to a temp file then rename over the real index.
+        // File.Move with overwrite:true is atomic on NTFS/SMB — the index is
+        // never left in a half-written state if the process is killed mid-write.
+        var tmpPath = _indexPath + ".tmp." + Environment.ProcessId;
+        try
+        {
+            await File.WriteAllTextAsync(tmpPath, json);
+            File.Move(tmpPath, _indexPath, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(tmpPath); } catch { /* ignore cleanup failure */ }
+            throw;
+        }
     }
 
     private void EnsureDirectory()
@@ -139,19 +153,29 @@ public class RecentTradeService : IRecentTradeService
     //  multiple users save simultaneously on the shared network drive.
     //
     //  Strategy: open (or create) a dedicated .lock file with FileShare.None.
-    //  Any competing writer blocks on the open call; up to 10 attempts × 300 ms
-    //  = 3 s total wait before giving up.
+    //  If the lock file is older than StaleLockAgeSeconds it is considered a
+    //  stale lock left by a crashed process and is deleted before retrying.
+    //  Any competing writer backs off up to MaxAttempts × RetryDelayMs before
+    //  giving up.
+    //
+    //  Index writes use an atomic write-then-rename commit so the index is
+    //  never left in a half-written state even if the process is killed
+    //  between the write and the rename.
     // ----------------------------------------------------------------
+
+    private const int MaxAttempts       = 15;
+    private const int RetryDelayMs      = 200;
+    private const int StaleLockAgeSeconds = 30;
 
     private async Task WithIndexLockAsync(Func<Task> action)
     {
-        const int maxAttempts = 10;
-        const int retryDelayMs = 300;
-
         EnsureDirectory();
 
-        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        for (int attempt = 0; attempt < MaxAttempts; attempt++)
         {
+            // Break a stale lock left by a crashed process.
+            TryBreakStaleLock();
+
             FileStream? lockFile = null;
             try
             {
@@ -159,15 +183,15 @@ public class RecentTradeService : IRecentTradeService
                     _lockPath,
                     FileMode.OpenOrCreate,
                     FileAccess.ReadWrite,
-                    FileShare.None);   // ← exclusive: blocks all other openers
+                    FileShare.None);
 
                 await action();
                 return;
             }
-            catch (IOException) when (attempt < maxAttempts - 1)
+            catch (IOException) when (attempt < MaxAttempts - 1)
             {
-                // Lock held by another process — wait and retry
-                await Task.Delay(retryDelayMs);
+                // Lock held by another live process — wait and retry.
+                await Task.Delay(RetryDelayMs);
             }
             finally
             {
@@ -178,6 +202,24 @@ public class RecentTradeService : IRecentTradeService
         throw new IOException(
             "Could not acquire index lock after multiple attempts. " +
             "Another process may be holding the lock file on the network share.");
+    }
+
+    /// <summary>
+    /// Deletes the lock file if it is older than <see cref="StaleLockAgeSeconds"/>,
+    /// indicating it was left behind by a process that crashed while holding the lock.
+    /// </summary>
+    private void TryBreakStaleLock()
+    {
+        try
+        {
+            if (!File.Exists(_lockPath))
+                return;
+
+            var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(_lockPath);
+            if (age.TotalSeconds > StaleLockAgeSeconds)
+                File.Delete(_lockPath);
+        }
+        catch { /* best-effort — another process may have already removed it */ }
     }
 
     // ----------------------------------------------------------------

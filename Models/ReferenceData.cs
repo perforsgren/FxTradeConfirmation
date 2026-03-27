@@ -35,7 +35,7 @@ public class ReferenceData
 
     // Currency pair → Portfolio mapping
     public IReadOnlyDictionary<string, string> CurrencyToPortfolio { get; init; } =
-        new Dictionary<string, string>();
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     // User profile lookups (case-insensitive)
     /// <summary>userprofile.UserId → userprofile.FullName</summary>

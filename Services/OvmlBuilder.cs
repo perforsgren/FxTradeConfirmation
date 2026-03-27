@@ -12,7 +12,7 @@ namespace FxTradeConfirmation.Services;
 /// AI-based OVML parser using OpenAI gpt-4o as fallback when the regex parser fails.
 /// Runs up to two passes: pass 2 is triggered when spot or put/call is missing.
 /// </summary>
-public sealed class OvmlBuilder : IOvmlParser
+public sealed class OvmlBuilder : IOvmlParser, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -27,9 +27,10 @@ public sealed class OvmlBuilder : IOvmlParser
     };
 
     // ── Config ───────────────────────────────────────────────────────────────
-    private readonly string _apiKey;
-    private readonly string _model;
     private readonly string _promptFilePath;
+
+    // ── Shared ChatClient (one instance per OvmlBuilder — same pattern as HttpClient) ──
+    private readonly ChatClient _chatClient;
 
     // ── Debug / diagnostics ──────────────────────────────────────────────────
     public string LastJson { get; private set; } = string.Empty;
@@ -38,12 +39,15 @@ public sealed class OvmlBuilder : IOvmlParser
     public int LastPassesUsed { get; private set; }
     public bool LastWasCanceled { get; private set; }
 
-    public OvmlBuilder(string promptFilePath, string? apiKey = null, string model = "gpt-5.4-mini")   
+    public OvmlBuilder(string promptFilePath, string? apiKey = null, string model = "gpt-5.4-mini")
     {
         _promptFilePath = promptFilePath;
-        _model = string.IsNullOrWhiteSpace(model) ? "gpt-5.4-mini" : model;
-        _apiKey = ResolveApiKey(apiKey, promptFilePath);
+        var resolvedModel = string.IsNullOrWhiteSpace(model) ? "gpt-5.4-mini" : model;
+        var resolvedKey   = ResolveApiKey(apiKey, promptFilePath);
+        _chatClient = new ChatClient(resolvedModel, resolvedKey);
     }
+
+    public void Dispose() => (_chatClient as IDisposable)?.Dispose();
 
     // ── IOvmlParser (sync — NOT supported for AI parser) ─────────────────────
 
@@ -90,11 +94,10 @@ public sealed class OvmlBuilder : IOvmlParser
         if (string.IsNullOrWhiteSpace(input))
             return ParseResult.Empty;
 
-        var client = new ChatClient(_model, _apiKey);
         ct.ThrowIfCancellationRequested();
 
         // ── Pass 1 ───────────────────────────────────────────────────────────
-        var raw1 = await CallApiAsync(client, input, systemPrompt, ct);
+        var raw1 = await CallApiAsync(input, systemPrompt, ct);
         if (LastWasCanceled) return ParseResult.Empty;
 
         var p1 = TryParseJson(raw1);
@@ -119,7 +122,7 @@ public sealed class OvmlBuilder : IOvmlParser
         if (extSpot.HasValue)
             modified += " sp ref " + extSpot.Value.ToString(CultureInfo.InvariantCulture);
 
-        var raw2 = await CallApiAsync(client, modified, systemPrompt, ct);
+        var raw2 = await CallApiAsync(modified, systemPrompt, ct);
         if (LastWasCanceled) return Finish(p1); // return pass-1 result on cancel
 
         var p2 = TryParseJson(raw2);
@@ -137,7 +140,7 @@ public sealed class OvmlBuilder : IOvmlParser
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private async Task<string> CallApiAsync(ChatClient client, string userInput, string systemPrompt, CancellationToken ct)
+    private async Task<string> CallApiAsync(string userInput, string systemPrompt, CancellationToken ct)
     {
         var today = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var sysText = (systemPrompt ?? string.Empty).Replace("{{TODAY}}", today);
@@ -151,7 +154,7 @@ public sealed class OvmlBuilder : IOvmlParser
 
         try
         {
-            var result = await client.CompleteChatAsync(messages, cancellationToken: ct);
+            var result = await _chatClient.CompleteChatAsync(messages, cancellationToken: ct);
             return result.Value.Content.Count > 0
                 ? result.Value.Content[0].Text
                 : string.Empty;

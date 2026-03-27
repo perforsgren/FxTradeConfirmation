@@ -49,5 +49,14 @@ public class TradeLeg
 
     // Helper properties
     public string BaseCurrency => CurrencyPair.Length >= 3 ? CurrencyPair[..3] : string.Empty;
-    public string QuoteCurrency => CurrencyPair.Length >= 6 ? CurrencyPair[3..6] : string.Empty;
+    public string QuoteCurrency
+    {
+        get
+        {
+            string normalized = CurrencyPair.Replace("/", string.Empty)
+                                            .Replace("-", string.Empty)
+                                            .Replace("_", string.Empty);
+            return normalized.Length >= 6 ? normalized[3..6] : string.Empty;
+        }
+    }
 }

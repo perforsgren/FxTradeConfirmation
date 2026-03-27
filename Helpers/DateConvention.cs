@@ -155,36 +155,34 @@ public class DateConvention
     // Finding Country Names for the CCY
     public string[] ctryNames(string CCY)
     {
-        string[] output = new string[2];
+        string ccyBase;
+        string ccyPrice;
 
-
-        string ccyBase = "";
-        string ccyPrice = "";
         if (CCY.Contains("/"))
         {
-            ccyBase = CCY.Substring(0, 3);
+            ccyBase  = CCY.Substring(0, 3);
             ccyPrice = CCY.Substring(4, 3);
         }
         else
         {
-            ccyBase = CCY.Substring(0, 3);
+            ccyBase  = CCY.Substring(0, 3);
             ccyPrice = CCY.Substring(3, 3);
         }
 
-        int cols = this.ctryCurrency.Length;
+        // Default to empty string so Calendar never receives a null entry
+        // for currencies that are not in the hardcoded lookup table.
+        string calBase  = string.Empty;
+        string calPrice = string.Empty;
 
-        for (int i = 0; i < cols; i++)
+        for (int i = 0; i < ctryCurrency.Length; i++)
         {
-            if (this.ctryCurrency[i] == ccyBase)
-            {
-                output[0] = this.ctryCalender[i];
-            }
-            else if (this.ctryCurrency[i] == ccyPrice)
-            {
-                output[1] = this.ctryCalender[i];
-            }
+            if (ctryCurrency[i] == ccyBase)
+                calBase = ctryCalender[i];
+            else if (ctryCurrency[i] == ccyPrice)
+                calPrice = ctryCalender[i];
         }
-        return output;
+
+        return [calBase, calPrice];
     }
 
     // Find CCY Holiday
