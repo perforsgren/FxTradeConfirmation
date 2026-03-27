@@ -28,6 +28,7 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
         StateChanged += OnStateChanged;
         Closing += (_, _) => SavePosition();
+        Closing += (_, _) => (_vm as IDisposable)?.Dispose();
 
         RestorePosition();
     }

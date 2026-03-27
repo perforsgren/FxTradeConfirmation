@@ -11,7 +11,7 @@ public record TradeSubmitResult(bool Success, long? MessageInId, string? ErrorMe
 /// Abstracts the FxTradeHub ExternalTradeIngestService so the ViewModel
 /// does not depend directly on the STP hub assemblies.
 /// </summary>
-public interface ITradeIngestService
+public interface ITradeIngestService : IDisposable
 {
     /// <summary>
     /// Submits all legs (option + optional hedge per leg) to the STP hub.

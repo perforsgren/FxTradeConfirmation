@@ -119,11 +119,8 @@ public partial class TradeGridControl : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
 
-        EventManager.RegisterClassHandler(typeof(TextBox), GotKeyboardFocusEvent,
-            new KeyboardFocusChangedEventHandler(OnTextBoxGotKeyboardFocus));
-        EventManager.RegisterClassHandler(typeof(TextBox), PreviewMouseLeftButtonDownEvent,
-            new MouseButtonEventHandler(OnTextBoxPreviewMouseLeftButtonDown));
-
+        PreviewGotKeyboardFocus += OnPreviewGotKeyboardFocus;
+        PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
         PreviewKeyDown += OnGridPreviewKeyDown;
     }
 
@@ -191,6 +188,21 @@ public partial class TradeGridControl : UserControl
             e.Handled = true; // all non-tabbable — swallow anyway
     }
 
+    private static void OnPreviewGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (e.OriginalSource is TextBox tb && !tb.IsReadOnly)
+            tb.SelectAll();
+    }
+
+    private static void OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+        var tb = FindParent<TextBox>(source);
+        if (tb == null || tb.IsReadOnly || tb.IsKeyboardFocusWithin) return;
+        tb.Focus();
+        e.Handled = true;
+    }
+
     /// <summary>
     /// Searches _tabOrder starting after <paramref name="startIndex"/> in the given
     /// direction and focuses the first tabbable candidate. Returns true on success.
@@ -235,21 +247,6 @@ public partial class TradeGridControl : UserControl
     {
         element.Focus();
         Keyboard.Focus(element);
-    }
-
-    private static void OnTextBoxGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (e.OriginalSource is TextBox tb && !tb.IsReadOnly)
-            tb.SelectAll();
-    }
-
-    private static void OnTextBoxPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.OriginalSource is not DependencyObject source) return;
-        var tb = FindParent<TextBox>(source);
-        if (tb == null || tb.IsReadOnly || tb.IsKeyboardFocusWithin) return;
-        tb.Focus();
-        e.Handled = true;
     }
 
     private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
@@ -474,44 +471,6 @@ public partial class TradeGridControl : UserControl
             {
                 applyAction(t.Text);
                 Keyboard.ClearFocus();
-            }
-        };
-    }
-
-    private static void AttachPremiumAmountHandlers(TextBox tb, TradeLegViewModel leg)
-    {
-        tb.PreviewTextInput += (s, ev) =>
-        {
-            ReplaceCommaWithDot(s, ev);
-            if (ev.Handled) return;
-
-            // Auto-inject minus sign for Buy legs when user starts typing into empty field.
-            if (s is TextBox t && leg.BuySell == BuySell.Buy
-                && t.Text.Trim() == string.Empty && char.IsDigit(ev.Text, 0))
-            {
-                t.Text = "-";
-                t.CaretIndex = 1;
-            }
-        };
-
-        tb.LostFocus += (s, _) => { if (s is TextBox t) leg.ApplyPremiumAmountInput(t.Text); };
-        tb.KeyDown += (s, e) =>
-        {
-            if (e.Key == Key.Enter && s is TextBox t)
-            {
-                leg.ApplyPremiumAmountInput(t.Text);
-                Keyboard.ClearFocus();
-            }
-        };
-
-        // Since binding is Explicit, sync VM → TextBox when the VM recalculates
-        // (e.g. from Premium input, Buy/Sell toggle, or solve).
-        // Only update when the TextBox does NOT have keyboard focus (user is not typing).
-        leg.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(leg.PremiumAmountText) && !tb.IsKeyboardFocusWithin)
-            {
-                tb.Text = leg.PremiumAmountText;
             }
         };
     }

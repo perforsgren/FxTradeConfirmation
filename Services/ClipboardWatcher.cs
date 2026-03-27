@@ -257,7 +257,11 @@ public sealed class ClipboardWatcher : IClipboardWatcher
         return sb.ToString();
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        ClipboardChanged = null;
+    }
 
     // --- P/Invoke ---
 

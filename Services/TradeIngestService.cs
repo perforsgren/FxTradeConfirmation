@@ -20,12 +20,15 @@ public class TradeIngestService : ITradeIngestService
     private const string SourceVenueCode = "FXTRADE_CONFIRM";
 
     private readonly ExternalTradeIngestService _ingestService;
+    private readonly MessageInRepository _messageInRepo;
+    private readonly MySqlStpRepository _stpRepo;
+    private readonly MessageInService _messageInService;
 
     public TradeIngestService(string connectionString)
     {
-        var messageInRepo = new MessageInRepository(connectionString);
-        var stpRepo = new MySqlStpRepository(connectionString);
-        var messageInService = new MessageInService(messageInRepo);
+        _messageInRepo   = new MessageInRepository(connectionString);
+        _stpRepo         = new MySqlStpRepository(connectionString);
+        _messageInService = new MessageInService(_messageInRepo);
 
         var parsers = new List<IInboundMessageParser>
         {
@@ -33,12 +36,20 @@ public class TradeIngestService : ITradeIngestService
         };
 
         var orchestrator = new MessageInParserOrchestrator(
-            messageInRepo,
-            stpRepo,
+            _messageInRepo,
+            _stpRepo,
             parsers,
             notificationService: null);
 
-        _ingestService = new ExternalTradeIngestService(messageInService, orchestrator);
+        _ingestService = new ExternalTradeIngestService(_messageInService, orchestrator);
+    }
+
+    public void Dispose()
+    {
+        (_ingestService  as IDisposable)?.Dispose();
+        (_messageInService as IDisposable)?.Dispose();
+        (_stpRepo        as IDisposable)?.Dispose();
+        (_messageInRepo  as IDisposable)?.Dispose();
     }
 
     public async Task<IReadOnlyList<TradeSubmitResult>> SubmitTradeAsync(IReadOnlyList<TradeLeg> legs)

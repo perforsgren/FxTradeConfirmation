@@ -10,7 +10,7 @@ using System.Windows;
 
 namespace FxTradeConfirmation.ViewModels;
 
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IDisposable
 {
     public IDatabaseService DatabaseService { get; }
     private readonly IEmailService _emailService;
@@ -1017,6 +1017,21 @@ public partial class MainViewModel : ObservableObject
             _connectionTimer!.Interval = connected ? 600_000 : 60_000;
         };
         _connectionTimer.Start();
+    }
+
+    public void Dispose()
+    {
+        if (_connectionTimer is not null)
+        {
+            _connectionTimer.Stop();
+            _connectionTimer.Dispose();
+            _connectionTimer = null;
+        }
+
+        if (_clipboardWatcher is not null)
+            _clipboardWatcher.ClipboardChanged -= OnClipboardChanged;
+
+        _ingestService?.Dispose();
     }
 
     public async Task RefreshConnectionAsync()
