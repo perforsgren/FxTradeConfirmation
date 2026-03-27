@@ -1,7 +1,7 @@
 ﻿<Window x:Class="FxTradeConfirmation.Views.SaveResultDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Save Results" Width="460 " SizeToContent="Height"
+        Title="Save Results" Width="460" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         KeyDown="Window_KeyDown">

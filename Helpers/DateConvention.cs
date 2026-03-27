@@ -27,6 +27,13 @@ public class DateConvention
 
     private Calendar _calendar;
 
+    /// <summary>
+    /// Maximum number of calendar days any date-rolling loop may advance or retreat.
+    /// No legitimate FX settlement roll exceeds this bound; a higher count indicates
+    /// corrupt or missing holiday data.
+    /// </summary>
+    private const int MaxRollDays = 30;
+
     public DateConvention(string CCY, DataTable Holidays)
     {
         _holidays = Holidays;
@@ -76,7 +83,8 @@ public class DateConvention
 
     public Convention GetConvention(string timeToExpiry)
     {
-        DateTime horizonDate = DateTime.Parse(DateTime.Now.ToShortDateString());
+        // Use today's date with the time component stripped — no string roundtrip needed.
+        DateTime horizonDate = DateTime.Today;
 
         // Over-night
         if (timeToExpiry.ToLower() == "on")
@@ -96,7 +104,9 @@ public class DateConvention
         else if (timeToExpiry.ToLower().EndsWith("d"))
         {
             _spotDate = getForwardDate(horizonDate, _tAdd);
-            double daysToExpiry = double.Parse(timeToExpiry.ToLower().Replace("d", ""));
+            string dStr = timeToExpiry.ToLower().Replace("d", "");
+            if (!double.TryParse(dStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double daysToExpiry))
+                throw new FormatException($"Cannot parse day count '{dStr}' in tenor '{timeToExpiry}'.");
             _expiryDate = horizonDate.AddDays(daysToExpiry);
 
             if (isFirstOfJan(_expiryDate) == true)
@@ -110,8 +120,10 @@ public class DateConvention
         {
             _spotDate = getForwardDate(horizonDate, _tAdd);
 
-            timeToExpiry = timeToExpiry.ToLower().Replace("w", "");
-            _expiryDate = horizonDate.AddDays(7 * int.Parse(timeToExpiry));
+            string wStr = timeToExpiry.ToLower().Replace("w", "");
+            if (!int.TryParse(wStr, NumberStyles.None, CultureInfo.InvariantCulture, out int weeks))
+                throw new FormatException($"Cannot parse week count '{wStr}' in tenor '{timeToExpiry}'.");
+            _expiryDate = horizonDate.AddDays(7 * weeks);
 
             if (isFirstOfJan(_expiryDate) == true)
             {
@@ -123,7 +135,7 @@ public class DateConvention
         else if (timeToExpiry.ToLower().EndsWith("m"))
         {
             string monthString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
-            if (int.TryParse(monthString, out int months))
+            if (int.TryParse(monthString, NumberStyles.None, CultureInfo.InvariantCulture, out int months))
             {
                 _spotDate = getForwardDate(horizonDate, _tAdd);
                 _deliveryDate = addMonths(_spotDate, months);
@@ -134,7 +146,7 @@ public class DateConvention
         else if (timeToExpiry.ToLower().EndsWith("y"))
         {
             string yearString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
-            if (int.TryParse(yearString, out int years))
+            if (int.TryParse(yearString, NumberStyles.None, CultureInfo.InvariantCulture, out int years))
             {
                 _spotDate = getForwardDate(horizonDate, _tAdd);
                 _deliveryDate = addYears(_spotDate, years);
@@ -143,12 +155,17 @@ public class DateConvention
         }
         else
         {
+            // Fallback: treat timeToExpiry as an explicit date in ISO 8601 (yyyy-MM-dd).
+            if (!DateTime.TryParseExact(timeToExpiry, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateTime explicitDate))
+                throw new FormatException($"Cannot parse '{timeToExpiry}' as an explicit date. Expected format: yyyy-MM-dd.");
+
             _spotDate = getForwardDate(horizonDate, _tAdd);
-            _deliveryDate = getForwardDate(DateTime.Parse(timeToExpiry), _tAdd);
+            _deliveryDate = getForwardDate(explicitDate, _tAdd);
             _expiryDate = getBackwardDate(_deliveryDate, _tAdd);
         }
 
-        _days = int.Parse((_expiryDate - horizonDate).TotalDays.ToString());
+        _days = (int)Math.Round((_expiryDate - horizonDate).TotalDays, MidpointRounding.AwayFromZero);
 
         var result = new Convention() { SpotDate = _spotDate, ExpiryDate = _expiryDate, DeliveryDate = _deliveryDate, Days = _days };
 
@@ -354,8 +371,13 @@ public class DateConvention
 
         if (isLastBusDayOfMonth(spotDate) == true)
         {
+            int rollDays = 0;
             do
             {
+                if (rollDays++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"addMonths EOM roll exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
                 if (isLastBusDayOfMonth(output) == false)
                 {
                     output = output.AddDays(1);
@@ -370,8 +392,14 @@ public class DateConvention
             {
                 output = output.AddDays(-2);
             }
+
+            int holidayRoll = 0;
             while (isCCYorUSHoliday(output) == true)
             {
+                if (holidayRoll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"addMonths holiday skip exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
                 output = output.AddDays(1);
             }
         }
@@ -385,8 +413,14 @@ public class DateConvention
             {
                 output = output.AddDays(1);
             }
+
+            int holidayRoll = 0;
             while (isCCYorUSHoliday(output) == true)
             {
+                if (holidayRoll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"addMonths holiday skip exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
                 output = output.AddDays(1);
             }
         }
@@ -410,8 +444,14 @@ public class DateConvention
         {
             output = output.AddDays(1);
         }
+
+        int holidayRoll = 0;
         while (isCCYorUSHoliday(output) == true)
         {
+            if (holidayRoll++ > MaxRollDays)
+                throw new InvalidOperationException(
+                    $"addYears holiday skip exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
             output = output.AddDays(1);
         }
 
@@ -427,8 +467,13 @@ public class DateConvention
         int numBusDays = 0;
         if (this._ccy.Substring(0, 3) != "USD" && this._ccy.Substring(3, 3) != "USD")
         {
+            int roll = 0;
             do
             {
+                if (roll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"getForwardDate (non-USD) exceeded {MaxRollDays} days from {horizonDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
                 if (isCCYHoliday(output) == false && output.DayOfWeek != DayOfWeek.Saturday && output.DayOfWeek != DayOfWeek.Sunday)
                 {
                     numBusDays = numBusDays + 1;
@@ -442,8 +487,13 @@ public class DateConvention
         }
         else
         {
+            int roll = 0;
             do
             {
+                if (roll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"getForwardDate (USD) exceeded {MaxRollDays} days from {horizonDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
                 if (isCCYHoliday_notUS(output) == false && output.DayOfWeek != DayOfWeek.Saturday && output.DayOfWeek != DayOfWeek.Sunday)
                 {
                     numBusDays = numBusDays + 1;
@@ -454,12 +504,16 @@ public class DateConvention
                 }
 
             } while (numBusDays < tAdd);
-
         }
 
-        // Check if Spot date is US holiday, if TRUE them move FORWARD 1 day until we find a non-US and non-CCY holiday
+        // Check if Spot date is US holiday, if TRUE then move FORWARD 1 day until we find a non-US and non-CCY holiday
+        int usRoll = 0;
         do
         {
+            if (usRoll++ > MaxRollDays)
+                throw new InvalidOperationException(
+                    $"getForwardDate US-holiday skip exceeded {MaxRollDays} days from {horizonDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
             if (new Calendar("USA", _holidays).IsHoliday(output) == true)
             {
                 output = output.AddDays(1);
@@ -492,9 +546,14 @@ public class DateConvention
         }
 
         bool businessDayFound = false;
+        int roll = 0;
         do
         {
-            int timespan = int.Parse((deliveryDate - output).TotalDays.ToString());
+            if (roll++ > MaxRollDays)
+                throw new InvalidOperationException(
+                    $"getBackwardDate exceeded {MaxRollDays} iterations from {deliveryDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+            int timespan = (int)(deliveryDate - output).TotalDays;
             for (int i = 1; i < timespan; i++)
             {
                 DateTime dayToCheck = output.AddDays(i);

@@ -66,18 +66,18 @@ namespace FxTradeConfirmation.Helpers
 
         public bool IsHoliday(DateTime date)
         {
-            bool output = false;
+            if (IsWeekend(date))
+                return true;
+
+            var dateOnly = date.Date;
 
             foreach (DataRow row in _holidays.Rows)
             {
-                if (row["HolidayDate"].ToString() == date.ToString() || IsWeekend(date) == true)
-                {
-                    output = true;
-                    break;
-                }
+                if (row["HolidayDate"] is DateTime holidayDate && holidayDate.Date == dateOnly)
+                    return true;
             }
 
-            return output;
+            return false;
         }
 
         public static bool IsWeekend(DateTime date)

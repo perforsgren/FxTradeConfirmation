@@ -430,7 +430,7 @@ public partial class TradeLegViewModel : ObservableObject
         if (_isRecalculating || IsPremiumLocked) return;
         if (!Premium.HasValue || !Notional.HasValue) return;
 
-        var amount = PremiumCalculator.CalculateAmount(Premium, Notional, PremiumStyle, Strike);
+        var amount = PremiumCalculator.CalculateAmount(Premium, Notional, PremiumStyle, Strike, CurrencyPair);
         if (amount.HasValue)
         {
             _isRecalculating = true;
@@ -449,7 +449,7 @@ public partial class TradeLegViewModel : ObservableObject
 
         // Use absolute amount so Premium is always a positive price, never a signed cash flow.
         var absAmount = Math.Abs(PremiumAmount.Value);
-        var prem = PremiumCalculator.CalculatePremium(absAmount, Notional, PremiumStyle, Strike);
+        var prem = PremiumCalculator.CalculatePremium(absAmount, Notional, PremiumStyle, Strike, CurrencyPair);
         if (prem.HasValue)
         {
             _isRecalculating = true;
