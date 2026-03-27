@@ -11,8 +11,8 @@ namespace FxTradeConfirmation.Services;
 
 public class DatabaseService : IDatabaseService
 {
-    private string _connectionString = string.Empty;
-    private bool _connectionVerified;
+    private volatile string _connectionString = string.Empty;
+    private volatile bool _connectionVerified;
 
     private static readonly string HolidayCachePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -61,21 +61,22 @@ public class DatabaseService : IDatabaseService
 
     public async Task<ReferenceData> LoadReferenceDataAsync()
     {
-        var data = new ReferenceData();
-
         if (!IsConnectionReady())
-            return data;
+            return new ReferenceData();
 
         try
         {
-            // Use separate connections per query to avoid "open DataReader" conflicts.
-            // MySql Connector/NET does not support MARS — only one active reader per connection.
-            data.Counterparts = await QueryListAsync("SELECT CounterpartyCode FROM counterparty WHERE IsActive = 1 ORDER BY CounterpartyCode");
-            data.CurrencyPairs = await QueryListAsync("SELECT currencypair FROM currencypairs ORDER BY currencypair");
-            data.EmailAddresses = await QueryListAsync("SELECT emailaddress FROM emailaddresses");
-            data.SalesNames = await QueryListAsync("SELECT DISTINCT FullName FROM userprofile WHERE FullName IS NOT NULL AND IsActive = 1 ORDER BY FullName");
-            data.ReportingEntities = await QueryListAsync("SELECT DISTINCT ReportingEntityId FROM userprofile WHERE ReportingEntityId IS NOT NULL AND IsActive = 1");
-            data.InvestmentDecisionIDs = await QueryListAsync("SELECT DISTINCT UserId FROM userprofile WHERE UserId IS NOT NULL AND IsActive = 1 ORDER BY UserId");
+            var counterparts       = await QueryListAsync("SELECT CounterpartyCode FROM counterparty WHERE IsActive = 1 ORDER BY CounterpartyCode");
+            var currencyPairs      = await QueryListAsync("SELECT currencypair FROM currencypairs ORDER BY currencypair");
+            var emailAddresses     = await QueryListAsync("SELECT emailaddress FROM emailaddresses");
+            var salesNames         = await QueryListAsync("SELECT DISTINCT FullName FROM userprofile WHERE FullName IS NOT NULL AND IsActive = 1 ORDER BY FullName");
+            var reportingEntities  = await QueryListAsync("SELECT DISTINCT ReportingEntityId FROM userprofile WHERE ReportingEntityId IS NOT NULL AND IsActive = 1");
+            var investmentDecIDs   = await QueryListAsync("SELECT DISTINCT UserId FROM userprofile WHERE UserId IS NOT NULL AND IsActive = 1 ORDER BY UserId");
+
+            var userIdToFullName        = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var userIdToReportingEntity = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var userIdToMx3Id           = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var fullNameToUserId        = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             await using (var conn = new MySqlConnection(_connectionString))
             {
@@ -85,18 +86,19 @@ public class DatabaseService : IDatabaseService
                 await using var profileReader = await profileCmd.ExecuteReaderAsync();
                 while (await profileReader.ReadAsync())
                 {
-                    var userId = profileReader.GetString(0);
-                    var fullName = profileReader.GetString(1);
-                    var reportingEntity = profileReader.IsDBNull(2) ? string.Empty : profileReader.GetString(2);
-                    var mx3Id = profileReader.IsDBNull(3) ? string.Empty : profileReader.GetString(3);
+                    var userId        = profileReader.GetString(0);
+                    var fullName      = profileReader.GetString(1);
+                    var reportingEnt  = profileReader.IsDBNull(2) ? string.Empty : profileReader.GetString(2);
+                    var mx3Id         = profileReader.IsDBNull(3) ? string.Empty : profileReader.GetString(3);
 
-                    data.UserIdToFullName.TryAdd(userId, fullName);
-                    data.UserIdToReportingEntity.TryAdd(userId, reportingEntity);
-                    data.UserIdToMx3Id.TryAdd(userId, mx3Id);
-                    data.FullNameToUserId.TryAdd(fullName, userId);
+                    userIdToFullName.TryAdd(userId, fullName);
+                    userIdToReportingEntity.TryAdd(userId, reportingEnt);
+                    userIdToMx3Id.TryAdd(userId, mx3Id);
+                    fullNameToUserId.TryAdd(fullName, userId);
                 }
             }
 
+            var currencyToPortfolio = new Dictionary<string, string>();
             await using (var conn = new MySqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
@@ -104,9 +106,10 @@ public class DatabaseService : IDatabaseService
                     "SELECT CurrencyPair, PortfolioCode FROM ccypairportfoliorule WHERE IsActive = 1", conn);
                 await using var reader = await cmd.ExecuteReaderAsync();
                 while (await reader.ReadAsync())
-                    data.CurrencyToPortfolio[reader.GetString(0)] = reader.GetString(1);
+                    currencyToPortfolio[reader.GetString(0)] = reader.GetString(1);
             }
 
+            var traderIdToCalypsoBook = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             await using (var conn = new MySqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
@@ -114,21 +117,32 @@ public class DatabaseService : IDatabaseService
                     "SELECT TraderId, CalypsoBook FROM stp_calypso_book_user WHERE IsActive = 1", conn);
                 await using var calypsoReader = await calypsoCmd.ExecuteReaderAsync();
                 while (await calypsoReader.ReadAsync())
-                {
-                    var traderId = calypsoReader.GetString(0);
-                    var calypsoBook = calypsoReader.GetString(1);
-                    data.TraderIdToCalypsoBook.TryAdd(traderId, calypsoBook);
-                }
+                    traderIdToCalypsoBook.TryAdd(calypsoReader.GetString(0), calypsoReader.GetString(1));
             }
 
             Debug.WriteLine("[DatabaseService] Reference data loaded successfully.");
+
+            return new ReferenceData
+            {
+                Counterparts            = counterparts,
+                CurrencyPairs           = currencyPairs,
+                EmailAddresses          = emailAddresses,
+                SalesNames              = salesNames,
+                ReportingEntities       = reportingEntities,
+                InvestmentDecisionIDs   = investmentDecIDs,
+                UserIdToFullName        = userIdToFullName,
+                UserIdToReportingEntity = userIdToReportingEntity,
+                UserIdToMx3Id           = userIdToMx3Id,
+                FullNameToUserId        = fullNameToUserId,
+                CurrencyToPortfolio     = currencyToPortfolio,
+                TraderIdToCalypsoBook   = traderIdToCalypsoBook,
+            };
         }
         catch (MySqlException ex)
         {
             Debug.WriteLine($"[DatabaseService] LoadReferenceData FAILED: {ex.Number} — {ex.Message}");
+            return new ReferenceData();
         }
-
-        return data;
     }
 
     public async Task<DataTable> LoadHolidaysAsync()

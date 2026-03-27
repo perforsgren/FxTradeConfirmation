@@ -24,8 +24,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// When true, clipboard events from our own paste operations are suppressed.
+    /// Written on UI-thread (or ThreadPool continuation); read on UI-thread from WndProc.
+    /// volatile ensures cross-thread write visibility.
     /// </summary>
-    private bool _suppressClipboardEvents;
+    private volatile bool _suppressClipboardEvents;
 
     /// <summary>
     /// Reentrance guard: 1 = flow in progress, 0 = idle.
@@ -289,7 +291,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            _suppressClipboardEvents = false;
+            // Ensure the flag is cleared on the UI thread — the same thread
+            // that reads it in OnClipboardChanged (via WndProc / WM_CLIPBOARDUPDATE).
+            Application.Current.Dispatcher.Invoke(() => _suppressClipboardEvents = false);
         }
     }
 
@@ -1005,16 +1009,23 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     // --- Connection Monitor ---
 
-    private System.Timers.Timer? _connectionTimer;
+    private System.Windows.Threading.DispatcherTimer? _connectionTimer;
 
     private void StartConnectionMonitor()
     {
-        _connectionTimer = new System.Timers.Timer(6000);
-        _connectionTimer.Elapsed += async (_, _) =>
+        _connectionTimer = new System.Windows.Threading.DispatcherTimer
         {
+            Interval = TimeSpan.FromSeconds(6)
+        };
+        _connectionTimer.Tick += async (_, _) =>
+        {
+            _connectionTimer.Stop();
             var connected = await DatabaseService.TestConnectionAsync();
             IsConnected = connected;
-            _connectionTimer!.Interval = connected ? 600_000 : 60_000;
+            _connectionTimer.Interval = connected
+                ? TimeSpan.FromMinutes(10)
+                : TimeSpan.FromMinutes(1);
+            _connectionTimer.Start();
         };
         _connectionTimer.Start();
     }
@@ -1024,7 +1035,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (_connectionTimer is not null)
         {
             _connectionTimer.Stop();
-            _connectionTimer.Dispose();
             _connectionTimer = null;
         }
 

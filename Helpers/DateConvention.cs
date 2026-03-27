@@ -20,10 +20,10 @@ public class DateConvention
     private string _ccy;
     private int _tAdd;
 
-    private DateTime _spotDate;
-    private DateTime _expiryDate;
-    private DateTime _deliveryDate;
-    private int _days;
+    // NOTE: _spotDate, _expiryDate, _deliveryDate, _days removed —
+    // they were written and read only within GetConvention, making
+    // them de-facto local variables stored as fields. Concurrent calls
+    // on a shared instance would corrupt each other's intermediate state.
 
     private Calendar _calendar;
 
@@ -52,124 +52,104 @@ public class DateConvention
         _calendar = Calendar;
     }
 
-    public string SpotDate
-    {
-        get
-        {
-            return this._spotDate.ToString("yyyy-MM-dd");
-        }
-    }
-    public string ExpiryDate
-    {
-        get
-        {
-            return this._expiryDate.ToString("yyyy-MM-dd");
-        }
-    }
-    public string DeliveryDate
-    {
-        get
-        {
-            return this._deliveryDate.ToString("yyyy-MM-dd");
-        }
-    }
-    public int Days
-    {
-        get
-        {
-            return this._days;
-        }
-    }
-
     public Convention GetConvention(string timeToExpiry)
     {
-        // Use today's date with the time component stripped — no string roundtrip needed.
         DateTime horizonDate = DateTime.Today;
+
+        DateTime spotDate;
+        DateTime expiryDate;
+        DateTime deliveryDate;
 
         // Over-night
         if (timeToExpiry.ToLower() == "on")
         {
-            _spotDate = getForwardDate(horizonDate, _tAdd);
-            _expiryDate = moveBusinessDays(horizonDate, 1);
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            expiryDate = moveBusinessDays(horizonDate, 1);
 
-            if (isFirstOfJan(_expiryDate) == true)
+            if (isFirstOfJan(expiryDate) == true)
             {
-                _expiryDate = moveBusinessDays(_expiryDate, 1);
+                expiryDate = moveBusinessDays(expiryDate, 1);
             }
 
-            _deliveryDate = getForwardDate(_expiryDate, _tAdd);
+            deliveryDate = getForwardDate(expiryDate, _tAdd);
         }
 
-        //days
+        // days
         else if (timeToExpiry.ToLower().EndsWith("d"))
         {
-            _spotDate = getForwardDate(horizonDate, _tAdd);
+            spotDate = getForwardDate(horizonDate, _tAdd);
             string dStr = timeToExpiry.ToLower().Replace("d", "");
             if (!double.TryParse(dStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double daysToExpiry))
                 throw new FormatException($"Cannot parse day count '{dStr}' in tenor '{timeToExpiry}'.");
-            _expiryDate = horizonDate.AddDays(daysToExpiry);
+            expiryDate = horizonDate.AddDays(daysToExpiry);
 
-            if (isFirstOfJan(_expiryDate) == true)
+            if (isFirstOfJan(expiryDate) == true)
             {
-                _expiryDate = moveBusinessDays(_expiryDate, 1);
+                expiryDate = moveBusinessDays(expiryDate, 1);
             }
-            _deliveryDate = getForwardDate(_expiryDate, _tAdd);
+            deliveryDate = getForwardDate(expiryDate, _tAdd);
         }
-        //weeks
+
+        // weeks
         else if (timeToExpiry.ToLower().EndsWith("w"))
         {
-            _spotDate = getForwardDate(horizonDate, _tAdd);
+            spotDate = getForwardDate(horizonDate, _tAdd);
 
             string wStr = timeToExpiry.ToLower().Replace("w", "");
             if (!int.TryParse(wStr, NumberStyles.None, CultureInfo.InvariantCulture, out int weeks))
                 throw new FormatException($"Cannot parse week count '{wStr}' in tenor '{timeToExpiry}'.");
-            _expiryDate = horizonDate.AddDays(7 * weeks);
+            expiryDate = horizonDate.AddDays(7 * weeks);
 
-            if (isFirstOfJan(_expiryDate) == true)
+            if (isFirstOfJan(expiryDate) == true)
             {
-                _expiryDate = moveBusinessDays(_expiryDate, 1);
+                expiryDate = moveBusinessDays(expiryDate, 1);
             }
-            _deliveryDate = getForwardDate(_expiryDate, _tAdd);
+            deliveryDate = getForwardDate(expiryDate, _tAdd);
         }
-        //months
+
+        // months
         else if (timeToExpiry.ToLower().EndsWith("m"))
         {
             string monthString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
-            if (int.TryParse(monthString, NumberStyles.None, CultureInfo.InvariantCulture, out int months))
-            {
-                _spotDate = getForwardDate(horizonDate, _tAdd);
-                _deliveryDate = addMonths(_spotDate, months);
-                _expiryDate = getBackwardDate(_deliveryDate, _tAdd);
-            }
+            if (!int.TryParse(monthString, NumberStyles.None, CultureInfo.InvariantCulture, out int months))
+                throw new FormatException($"Cannot parse month count '{monthString}' in tenor '{timeToExpiry}'.");
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            deliveryDate = addMonths(spotDate, months);
+            expiryDate = getBackwardDate(deliveryDate, _tAdd);
         }
-        //years
+
+        // years
         else if (timeToExpiry.ToLower().EndsWith("y"))
         {
             string yearString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
-            if (int.TryParse(yearString, NumberStyles.None, CultureInfo.InvariantCulture, out int years))
-            {
-                _spotDate = getForwardDate(horizonDate, _tAdd);
-                _deliveryDate = addYears(_spotDate, years);
-                _expiryDate = getBackwardDate(_deliveryDate, _tAdd);
-            }
+            if (!int.TryParse(yearString, NumberStyles.None, CultureInfo.InvariantCulture, out int years))
+                throw new FormatException($"Cannot parse year count '{yearString}' in tenor '{timeToExpiry}'.");
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            deliveryDate = addYears(spotDate, years);
+            expiryDate = getBackwardDate(deliveryDate, _tAdd);
         }
+
+        // explicit ISO date
         else
         {
-            // Fallback: treat timeToExpiry as an explicit date in ISO 8601 (yyyy-MM-dd).
             if (!DateTime.TryParseExact(timeToExpiry, "yyyy-MM-dd", CultureInfo.InvariantCulture,
                     DateTimeStyles.None, out DateTime explicitDate))
                 throw new FormatException($"Cannot parse '{timeToExpiry}' as an explicit date. Expected format: yyyy-MM-dd.");
 
-            _spotDate = getForwardDate(horizonDate, _tAdd);
-            _deliveryDate = getForwardDate(explicitDate, _tAdd);
-            _expiryDate = getBackwardDate(_deliveryDate, _tAdd);
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            deliveryDate = getForwardDate(explicitDate, _tAdd);
+            expiryDate = getBackwardDate(deliveryDate, _tAdd);
         }
 
-        _days = (int)Math.Round((_expiryDate - horizonDate).TotalDays, MidpointRounding.AwayFromZero);
+        int days = (int)Math.Round((expiryDate - horizonDate).TotalDays, MidpointRounding.AwayFromZero);
 
-        var result = new Convention() { SpotDate = _spotDate, ExpiryDate = _expiryDate, DeliveryDate = _deliveryDate, Days = _days };
-
-        return result;
+        return new Convention
+        {
+            SpotDate = spotDate,
+            ExpiryDate = expiryDate,
+            DeliveryDate = deliveryDate,
+            Days = days
+        };
     }
 
     // Finding Country Names for the CCY
