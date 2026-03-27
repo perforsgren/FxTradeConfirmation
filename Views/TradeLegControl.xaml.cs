@@ -40,7 +40,7 @@ public partial class TradeLegControl : UserControl
     }
     private void StrikeBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyStrikeInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyStrikeInput(tb.Text);
     }
 
     // --- Notional ---
@@ -52,7 +52,7 @@ public partial class TradeLegControl : UserControl
     }
     private void NotionalBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyNotionalInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyNotionalInput(tb.Text);
     }
 
     // --- Premium ---
@@ -64,7 +64,7 @@ public partial class TradeLegControl : UserControl
     }
     private void PremiumBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyPremiumInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyPremiumInput(tb.Text);
     }
 
     // --- Premium Amount ---
@@ -76,7 +76,7 @@ public partial class TradeLegControl : UserControl
     }
     private void PremiumAmountBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyPremiumAmountInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyPremiumAmountInput(tb.Text);
     }
 
     // --- Expiry ---
@@ -86,7 +86,7 @@ public partial class TradeLegControl : UserControl
     }
     private void ExpiryBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyExpiryInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyExpiryInput(tb.Text);
     }
 
     // --- Margin ---
@@ -98,7 +98,7 @@ public partial class TradeLegControl : UserControl
     }
     private void MarginBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyMarginInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyMarginInput(tb.Text);
     }
 
     // --- Execution Time ---
@@ -108,7 +108,7 @@ public partial class TradeLegControl : UserControl
     }
     private void ExecutionTimeBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyExecutionTimeInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyExecutionTimeInput(tb.Text);
     }
 
     // --- Hedge Notional ---
@@ -120,7 +120,7 @@ public partial class TradeLegControl : UserControl
     }
     private void HedgeNotionalBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyHedgeNotionalInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyHedgeNotionalInput(tb.Text);
     }
 
     // --- Hedge Rate ---
@@ -132,6 +132,6 @@ public partial class TradeLegControl : UserControl
     }
     private void HedgeRateBox_KeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter && sender is TextBox tb) { VM?.ApplyHedgeRateInput(tb.Text); Keyboard.ClearFocus(); }
+        if (e.Key == Key.Enter && sender is TextBox tb) VM?.ApplyHedgeRateInput(tb.Text);
     }
 }

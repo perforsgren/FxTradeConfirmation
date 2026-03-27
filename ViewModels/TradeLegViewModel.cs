@@ -194,8 +194,17 @@ public partial class TradeLegViewModel : ObservableObject
     public decimal? Notional => NotionalParser.Parse(NotionalText);
     public decimal? Premium => decimal.TryParse(PremiumText, System.Globalization.NumberStyles.Any,
         System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
-    public decimal? PremiumAmount => decimal.TryParse(PremiumAmountText, System.Globalization.NumberStyles.Any,
-        System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+    public decimal? PremiumAmount
+    {
+        get
+        {
+            if (!decimal.TryParse(PremiumAmountText, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var v))
+                return null;
+            // Always return correctly signed value regardless of what the user typed.
+            return PremiumCalculator.ApplySign(Math.Abs(v), BuySell);
+        }
+    }
     public decimal? HedgeNotional => NotionalParser.Parse(HedgeNotionalText);
     public decimal? HedgeRate => decimal.TryParse(HedgeRateText, System.Globalization.NumberStyles.Any,
         System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
@@ -345,6 +354,23 @@ public partial class TradeLegViewModel : ObservableObject
         _parent.NotifyLegChanged();
     }
 
+    partial void OnHedgeNotionalTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HedgeNotional));
+        _parent.UpdateSaveValidation();
+    }
+
+    partial void OnHedgeRateTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HedgeRate));
+        _parent.UpdateSaveValidation();
+    }
+
+    partial void OnHedgeSettlementDateChanged(DateTime? value)
+    {
+        _parent.UpdateSaveValidation();
+    }
+
     partial void OnMicChanged(string value)
     {
         var broker = MicBrokerMapping.GetBrokerFromMic(value);
@@ -421,7 +447,9 @@ public partial class TradeLegViewModel : ObservableObject
         if (_isRecalculating || IsPremiumLocked) return;
         if (!PremiumAmount.HasValue || !Notional.HasValue) return;
 
-        var prem = PremiumCalculator.CalculatePremium(PremiumAmount, Notional, PremiumStyle, Strike);
+        // Use absolute amount so Premium is always a positive price, never a signed cash flow.
+        var absAmount = Math.Abs(PremiumAmount.Value);
+        var prem = PremiumCalculator.CalculatePremium(absAmount, Notional, PremiumStyle, Strike);
         if (prem.HasValue)
         {
             _isRecalculating = true;
@@ -637,6 +665,8 @@ public partial class TradeLegViewModel : ObservableObject
         if (decimal.TryParse(normalized, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out var value))
         {
+            // Premium is always a positive price — ignore any sign the user typed.
+            value = Math.Abs(value);
             _lastValidPremium = value;
 
             int dotIndex = normalized.IndexOf('.');
@@ -674,14 +704,16 @@ public partial class TradeLegViewModel : ObservableObject
         var parsed = NotionalParser.Parse(input);
         if (parsed.HasValue)
         {
-            _lastValidPremiumAmount = parsed.Value;
+            // Normalize sign according to Buy/Sell — user must not be able to force wrong direction.
+            var signed = PremiumCalculator.ApplySign(Math.Abs(parsed.Value), BuySell);
+            _lastValidPremiumAmount = signed;
 
             var expandedDecimals = NotionalParser.CountInputDecimals(input);
             int userDecimals = expandedDecimals ?? 0;
             _userPremiumAmountDecimals = userDecimals > 2 ? userDecimals : null;
 
             int decimals = Math.Max(userDecimals, 2);
-            PremiumAmountText = FormatPremiumAmount(parsed.Value, decimals);
+            PremiumAmountText = FormatPremiumAmount(signed, decimals);
         }
         else
         {
@@ -1095,4 +1127,10 @@ public partial class TradeLegViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(leg.Expiry))
             ApplyExpiryInput(leg.Expiry);
     }
+
+    /// <summary>
+    /// Returns the sign prefix ("-" for Buy, "" for Sell) to pre-fill
+    /// the Premium Amount TextBox when it receives focus.
+    /// </summary>
+    public string PremiumAmountSignPrefix => BuySell == BuySell.Buy ? "-" : "";
 }

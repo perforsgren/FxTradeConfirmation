@@ -18,6 +18,10 @@ public partial class ClipboardCaptureDialog : Window
 
     private readonly IReadOnlyList<OvmlLeg> _originalLegs;
 
+    // Offset from owner's top-left corner, set once when dialog is shown
+    private double _offsetLeft;
+    private double _offsetTop;
+
     public ClipboardCaptureDialog(
         ClipboardChangedEventArgs e,
         string ovml,
@@ -60,14 +64,56 @@ public partial class ClipboardCaptureDialog : Window
         LegsList.ItemsSource = ParsedLegs;
 
         OvmlLabel.Text = string.IsNullOrEmpty(ovml) ? "(no OVML generated)" : ovml;
+
+        Loaded += OnLoaded;
     }
 
-    // ── Drag via header ───────────────────────────────────────────────────
+    // ── Owner tracking ────────────────────────────────────────────────────
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (Owner is null)
+            return;
+
+        // Compute offset once so the dialog sits centred over the owner
+        _offsetLeft = (Owner.Width - ActualWidth) / 2;
+        _offsetTop = (Owner.Height - ActualHeight) / 2;
+
+        SnapToOwner();
+
+        Owner.LocationChanged += OnOwnerLocationChanged;
+        Owner.Closed += OnOwnerClosed;
+    }
+
+    private void OnOwnerLocationChanged(object? sender, EventArgs e) => SnapToOwner();
+
+    private void OnOwnerClosed(object? sender, EventArgs e) => Close();
+
+    private void SnapToOwner()
+    {
+        if (Owner is null)
+            return;
+
+        Left = Owner.Left + _offsetLeft;
+        Top  = Owner.Top  + _offsetTop;
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (Owner is not null)
+        {
+            Owner.LocationChanged -= OnOwnerLocationChanged;
+            Owner.Closed          -= OnOwnerClosed;
+        }
+        base.OnClosed(e);
+    }
+
+    // ── Header mouse-down: drag disabled, dialog is locked to owner ───────
 
     private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.LeftButton == MouseButtonState.Pressed)
-            DragMove();
+        // Intentionally empty — dialog follows the owner window instead of
+        // being draggable on its own.
     }
 
     // ── Toggle handlers ───────────────────────────────────────────────────

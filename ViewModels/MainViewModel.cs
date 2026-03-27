@@ -18,7 +18,7 @@ public partial class MainViewModel : ObservableObject
     private readonly IRecentTradeService? _recentTradeService;
     private readonly IClipboardWatcher? _clipboardWatcher;
     private readonly IOptionQueryFilter? _optionQueryFilter;
-    private readonly IOvmlParser _regexParser;
+    private IOvmlParser _regexParser;
     private readonly IOvmlParser _aiParser;
     private readonly IBloombergPaster? _bloombergPaster;
 
@@ -50,11 +50,11 @@ public partial class MainViewModel : ObservableObject
         _recentTradeService = recentTradeService;
         _clipboardWatcher = clipboardWatcher;
         _optionQueryFilter = optionQueryFilter;
-        _regexParser = regexParser ?? new OvmlBuilderAP3();
+        ReferenceData = new ReferenceData();                          // ← före parsern
+        _regexParser = regexParser ?? new OvmlBuilderAP3(ReferenceData.CurrencyPairs);
         _aiParser = aiParser ?? new OvmlBuilder(
             promptFilePath: @"\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\Settings\FxTradeConfirmation\Prompt.txt");
         _bloombergPaster = bloombergPaster;
-        ReferenceData = new ReferenceData();
 
         if (_clipboardWatcher != null)
             _clipboardWatcher.ClipboardChanged += OnClipboardChanged;
@@ -302,14 +302,14 @@ public partial class MainViewModel : ObservableObject
         {
             var data = await DatabaseService.LoadReferenceDataAsync();
 
-            // Must assign on the UI thread so WPF bindings update correctly
-            Application.Current.Dispatcher.Invoke(() => ReferenceData = data);
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                ReferenceData = data;
+                _regexParser = new OvmlBuilderAP3(ReferenceData.CurrencyPairs);  // ← uppdatera med riktiga par
+            });
 
             await SetupUserDefaults();
 
-            // Load portfolio for the default currency pair on all legs.
-            // This must happen AFTER the DB connection is established,
-            // because AddLegInternal runs before InitializeAsync completes.
             foreach (var leg in Legs)
                 await leg.LoadPortfolioForCurrentPairAsync();
         }
@@ -879,10 +879,14 @@ public partial class MainViewModel : ObservableObject
         if (_suppressTotalPremiumUpdate) return;
 
         TotalPremium = Legs.Sum(l => l.PremiumAmount ?? 0m);
+
+        var premiumCurrency = Legs.Count > 0 ? Legs[0].PremiumCurrency : string.Empty;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+
         TotalPremiumDisplay = TotalPremium switch
         {
-            > 0 => $"Client receives {TotalPremium:N2}",
-            < 0 => $"Client pays {Math.Abs(TotalPremium):N2}",
+            > 0 => $"Client receives {TotalPremium.ToString("N2", inv)} {premiumCurrency}",
+            < 0 => $"Client pays {Math.Abs(TotalPremium).ToString("N2", inv)} {premiumCurrency}",
             _ => "Zero cost"
         };
 
@@ -949,6 +953,16 @@ public partial class MainViewModel : ObservableObject
                 missing.Add($"{prefix}Notional");
             if (!leg.PremiumAmount.HasValue)
                 missing.Add($"{prefix}Premium");
+
+            if (leg.Hedge != HedgeType.No)
+            {
+                if (!leg.HedgeNotional.HasValue)
+                    missing.Add($"{prefix}Hedge Notional");
+                if (!leg.HedgeRate.HasValue)
+                    missing.Add($"{prefix}Hedge Rate");
+                if (!leg.HedgeSettlementDate.HasValue)
+                    missing.Add($"{prefix}Hedge Settlement Date");
+            }
         }
 
         CanSave = missing.Count == 0;
@@ -974,6 +988,15 @@ public partial class MainViewModel : ObservableObject
                       && leg.ExpiryDate.HasValue
                       && leg.Notional.HasValue
                       && leg.PremiumAmount.HasValue;
+
+            if (leg.Hedge != HedgeType.No)
+            {
+                valid = valid
+                    && leg.HedgeNotional.HasValue
+                    && leg.HedgeRate.HasValue
+                    && leg.HedgeSettlementDate.HasValue;
+            }
+
             leg.HasValidationError = !valid;
             if (!valid) allValid = false;
         }

@@ -40,8 +40,15 @@ public static class NotionalParser
 
         if (commaCount == 1 && dotCount == 0)
         {
-            // Single comma, no dots → comma is the decimal separator
-            numPart = numPart.Replace(',', '.');
+            // A single comma followed by exactly 1 or 2 digits is a decimal separator (e.g. "1,5" or "1,25").
+            // A single comma followed by exactly 3 digits is a thousands separator (e.g. "500,000").
+            int commaIndex = numPart.IndexOf(',');
+            int digitsAfterComma = numPart.Length - commaIndex - 1;
+
+            if (digitsAfterComma == 3)
+                numPart = numPart.Replace(",", "");      // thousands separator → strip
+            else
+                numPart = numPart.Replace(',', '.');     // decimal separator → replace
         }
         else if (commaCount > 0)
         {

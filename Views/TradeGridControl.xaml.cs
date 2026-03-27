@@ -129,9 +129,10 @@ public partial class TradeGridControl : UserControl
 
     private void OnGridPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Tab) return;
+        if (e.Key != Key.Tab && e.Key != Key.Enter) return;
 
-        bool forward = !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        // Enter always moves forward; Tab respects Shift modifier
+        bool forward = e.Key == Key.Enter || !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         var focused = Keyboard.FocusedElement as DependencyObject;
 
         // Resolve the registered UIElement that currently holds focus
@@ -354,7 +355,7 @@ public partial class TradeGridControl : UserControl
 
                 // Option result
                 string optionLabel = $"Leg {legNum} Option — {leg.BuySell} {leg.CallPut} " +
-                                     $"{leg.CurrencyPair} {leg.Strike:G29} " +
+                                     $"{leg.CurrencyPair} {FormatRate(leg.Strike, leg.CurrencyPair)} " +
                                      $"{leg.ExpiryDate:yyyy-MM-dd}";
                 optionItems.Add(SaveResultItem.FromResult(results[resultIndex], optionLabel, successBrush, failBrush));
                 resultIndex++;
@@ -368,7 +369,7 @@ public partial class TradeGridControl : UserControl
                 if (hasHedge)
                 {
                     string hedgeLabel = $"Leg {legNum} Hedge — {leg.Hedge} " +
-                                        $"{leg.HedgeBuySell} {leg.CurrencyPair} @ {leg.HedgeRate:G29}";
+                                        $"{leg.HedgeBuySell} {leg.CurrencyPair} @ {FormatRate(leg.HedgeRate, leg.CurrencyPair)}";
                     hedgeItems.Add(SaveResultItem.FromResult(results[resultIndex], hedgeLabel, successBrush, failBrush));
                     resultIndex++;
                 }
@@ -381,6 +382,25 @@ public partial class TradeGridControl : UserControl
             var dialog = new SaveResultDialog(items, successCount, failCount) { Owner = ownerWindow };
             dialog.ShowDialog();
         }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    /// <summary>
+    /// Formats a rate (strike or hedge rate) with a minimum of 4 decimal places,
+    /// or 2 decimal places when the currency pair involves JPY.
+    /// </summary>
+    private static string FormatRate(decimal? value, string currencyPair)
+    {
+        if (!value.HasValue) return "—";
+
+        bool isJpy = currencyPair.Contains("JPY", StringComparison.OrdinalIgnoreCase);
+        int minDecimals = isJpy ? 2 : 4;
+
+        var raw = value.Value.ToString("G29", CultureInfo.InvariantCulture);
+        int dotIndex = raw.IndexOf('.');
+        int actualDecimals = dotIndex >= 0 ? raw.Length - dotIndex - 1 : 0;
+
+        int decimals = Math.Max(actualDecimals, minDecimals);
+        return value.Value.ToString($"F{decimals}", CultureInfo.InvariantCulture);
     }
 
     private void OnOpenRecentDialogRequested(IRecentTradeService recentTradeService)
@@ -454,6 +474,44 @@ public partial class TradeGridControl : UserControl
             {
                 applyAction(t.Text);
                 Keyboard.ClearFocus();
+            }
+        };
+    }
+
+    private static void AttachPremiumAmountHandlers(TextBox tb, TradeLegViewModel leg)
+    {
+        tb.PreviewTextInput += (s, ev) =>
+        {
+            ReplaceCommaWithDot(s, ev);
+            if (ev.Handled) return;
+
+            // Auto-inject minus sign for Buy legs when user starts typing into empty field.
+            if (s is TextBox t && leg.BuySell == BuySell.Buy
+                && t.Text.Trim() == string.Empty && char.IsDigit(ev.Text, 0))
+            {
+                t.Text = "-";
+                t.CaretIndex = 1;
+            }
+        };
+
+        tb.LostFocus += (s, _) => { if (s is TextBox t) leg.ApplyPremiumAmountInput(t.Text); };
+        tb.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter && s is TextBox t)
+            {
+                leg.ApplyPremiumAmountInput(t.Text);
+                Keyboard.ClearFocus();
+            }
+        };
+
+        // Since binding is Explicit, sync VM → TextBox when the VM recalculates
+        // (e.g. from Premium input, Buy/Sell toggle, or solve).
+        // Only update when the TextBox does NOT have keyboard focus (user is not typing).
+        leg.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(leg.PremiumAmountText) && !tb.IsKeyboardFocusWithin)
+            {
+                tb.Text = leg.PremiumAmountText;
             }
         };
     }
@@ -921,8 +979,6 @@ public partial class TradeGridControl : UserControl
             AttachNumericHandlers(premAmtTb, leg.ApplyPremiumAmountInput);
             AddCell(RowPremiumAmount, vc, premAmtTb);
             legControls[i].Add((RowPremiumAmount, premAmtTb));
-
-            _legPremiumControls.Add((premiumTb, premAmtTb));
 
             // Premium Date — read-only, skip in tab order
             AddCell(RowPremiumDate, vc, CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumDate),

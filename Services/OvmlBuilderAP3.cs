@@ -20,6 +20,19 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
     private static readonly Regex RxLeg         = new(@"\b(buy|köpa|sell|sälja)\b\s*(?:a)?\s*([0-9]*\.?[0-9]+[dD]?)?\s*(call|put)?\s*(?:in\s*([0-9,\.]*\s*(m|mio|milj|M)?))?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex RxDeltaStrike = new(@"^(\d+(?:\.\d+)?)[dD]$", RegexOptions.Compiled);
 
+    /// <summary>
+    /// Known currency pairs loaded from reference data (e.g. "EURNOK", "USDSEK").
+    /// Used as an allowlist so we never misidentify names or other words as a pair.
+    /// </summary>
+    private readonly HashSet<string> _knownPairs;
+
+    public OvmlBuilderAP3(IEnumerable<string>? knownPairs = null)
+    {
+        _knownPairs = knownPairs is null
+            ? []
+            : new HashSet<string>(knownPairs.Select(p => p.ToUpperInvariant()), StringComparer.OrdinalIgnoreCase);
+    }
+
     public bool TryParse(string input, out string ovml, out IReadOnlyList<OvmlLeg> legs)
     {
         ovml = string.Empty;
@@ -69,14 +82,38 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
         return Regex.Replace(text, @"[^\w\s\.\,]", string.Empty);
     }
 
-    private static string ExtractPair(string text)
+    private string ExtractPair(string text)
     {
-        var m = RxPairSpaced.Match(text);
-        if (m.Success)
-            return (m.Groups[1].Value + m.Groups[2].Value).ToUpperInvariant();
+        // ── 1. Allowlist match (most reliable) ──────────────────────────────
+        // Scan every 6-letter word and every "ABC DEF" pair against known pairs.
+        if (_knownPairs.Count > 0)
+        {
+            // Compact: "eurnok"
+            foreach (Match m in RxPairCompact.Matches(text))
+            {
+                var candidate = m.Groups[1].Value.ToUpperInvariant();
+                if (_knownPairs.Contains(candidate))
+                    return candidate;
+            }
 
-        m = RxPairCompact.Match(text);
-        return m.Success ? m.Groups[1].Value.ToUpperInvariant() : "UNKNOWN";
+            // Spaced: "eur nok"
+            foreach (Match m in RxPairSpaced.Matches(text))
+            {
+                var candidate = (m.Groups[1].Value + m.Groups[2].Value).ToUpperInvariant();
+                if (_knownPairs.Contains(candidate))
+                    return candidate;
+            }
+        }
+
+        // ── 2. Fallback: first compact 6-letter token, then spaced ──────────
+        var mc = RxPairCompact.Match(text);
+        if (mc.Success)
+            return mc.Groups[1].Value.ToUpperInvariant();
+
+        var ms = RxPairSpaced.Match(text);
+        return ms.Success
+            ? (ms.Groups[1].Value + ms.Groups[2].Value).ToUpperInvariant()
+            : "UNKNOWN";
     }
 
     private static string ExtractSpot(string text)
