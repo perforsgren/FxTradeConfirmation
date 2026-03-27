@@ -318,9 +318,9 @@ public sealed class BloombergPaster : IBloombergPaster
     private const int GWL_STYLE = -16;
     private const int GWL_EXSTYLE = -20;
 
-    private const long WS_THICKFRAME = 0x00040000L;
-    private const long WS_EX_TOOLWINDOW = 0x00000080L;
-    private const long WS_EX_APPWINDOW = 0x00040000L;
+    private const int WS_THICKFRAME = 0x00040000;
+    private const int WS_EX_TOOLWINDOW = 0x00000080;
+    private const int WS_EX_APPWINDOW = 0x00040000;
 
     // ── P/Invoke ─────────────────────────────────────────────────────────────
 
@@ -374,7 +374,7 @@ public sealed class BloombergPaster : IBloombergPaster
     private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern long GetWindowLong(IntPtr hWnd, int nIndex);
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
     // ── Structs ───────────────────────────────────────────────────────────────
 
