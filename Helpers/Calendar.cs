@@ -1,37 +1,13 @@
-﻿#region Namespaces
-using System;
-using System.IO;
-using System.Collections.Generic;
-using System.Collections;
-using System.ComponentModel;
-using System.Data;
-using System.Data.Sql;
-using System.Data.SqlClient;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml;
-using System.Xml.Linq;
-using System.Diagnostics;
-#endregion
+﻿using System.Data;
 
 namespace FxTradeConfirmation.Helpers
 {
+
     class Calendar
     {
-        #region Variables
-
         private DataTable _holidays = new DataTable();
         private string[] _country;
-        public DataTable dt = new DataTable();
 
-        // Below you see the countries for which the holiday calendar is covering, TARGET is the offical EURO calendar
-        //private string[] _countries = new string[] { "AUSTRALIA", "CANADA", "CHINA", "DENMARK", "ENGLAND", "EURO", "FRANCE", "GERMANY", "GLOBAL", "ITALY", "JAPAN", "NORWAY", "SWEDEN", "SWITZERLAND", "TARGET", "USA" };
-
-        #endregion
-
-        #region Constructor
         public Calendar(DataTable Holidays)
         {
             _holidays.Columns.Add("Market", typeof(string));
@@ -71,9 +47,7 @@ namespace FxTradeConfirmation.Helpers
                 }
             }
         }
-        #endregion
 
-        #region Properties
         public string[] Country
         {
             get
@@ -90,9 +64,6 @@ namespace FxTradeConfirmation.Helpers
             }
         }
 
-        #endregion
-
-        #region Methods
         public bool IsHoliday(DateTime date)
         {
             bool output = false;
@@ -108,14 +79,10 @@ namespace FxTradeConfirmation.Helpers
 
             return output;
         }
-        #endregion
 
-        #region Functions
         public static bool IsWeekend(DateTime date)
         {
             return new[] { DayOfWeek.Sunday, DayOfWeek.Saturday }.Contains(date.DayOfWeek);
         }
-        #endregion
-
     }
 }

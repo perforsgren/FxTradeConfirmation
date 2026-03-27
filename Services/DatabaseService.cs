@@ -1,6 +1,8 @@
-﻿using System.Data;
-using System.Data.SqlClient;
+﻿using System.Data.SqlClient;
+using System.Data;
 using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
 using FxTradeConfirmation.Models;
 using FxSharedConfig;
 using MySql.Data.MySqlClient;
@@ -12,12 +14,18 @@ public class DatabaseService : IDatabaseService
     private string _connectionString = string.Empty;
     private bool _connectionVerified;
 
+    private static readonly string HolidayCachePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "FxTradeConfirmation", "holidays_cache.json");
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+
     public Task InitializeAsync()
     {
         try
         {
             _connectionString = AppDbConfig.GetConnectionString("trade_stp");
-            Debug.WriteLine($"[DatabaseService] Connection string loaded for trade_stp.");
+            Debug.WriteLine("[DatabaseService] Connection string loaded for trade_stp.");
         }
         catch (Exception ex)
         {
@@ -69,7 +77,6 @@ public class DatabaseService : IDatabaseService
             data.ReportingEntities = await QueryListAsync("SELECT DISTINCT ReportingEntityId FROM userprofile WHERE ReportingEntityId IS NOT NULL AND IsActive = 1");
             data.InvestmentDecisionIDs = await QueryListAsync("SELECT DISTINCT UserId FROM userprofile WHERE UserId IS NOT NULL AND IsActive = 1 ORDER BY UserId");
 
-            // Load user profile lookup maps: UserId ↔ FullName, UserId → ReportingEntityId, UserId → Mx3Id
             await using (var conn = new MySqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
@@ -100,7 +107,6 @@ public class DatabaseService : IDatabaseService
                     data.CurrencyToPortfolio[reader.GetString(0)] = reader.GetString(1);
             }
 
-            // Load Calypso Book user mapping: TraderId → CalypsoBook
             await using (var conn = new MySqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
@@ -131,32 +137,54 @@ public class DatabaseService : IDatabaseService
         dt.Columns.Add("Market", typeof(string));
         dt.Columns.Add("HolidayDate", typeof(DateTime));
 
-        try
+        // Use IP directly to avoid DNS round-robin hitting the non-responsive address.
+        // System.Data.SqlClient does not require TrustServerCertificate for internal servers.
+        const int maxAttempts = 5;
+        const string sqlConnStr = "Data Source=10.5.85.33;Initial Catalog=AHS;Integrated Security=True;Connect Timeout=5;";
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var sqlConnStr = "Data Source=AHSKvant-prod-db;Initial Catalog=AHS;Integrated Security=True;Connect Timeout=15;";
-            using var conn = new SqlConnection(sqlConnStr);
-            await conn.OpenAsync();
-
-            var sql = $"SELECT MARKET, HOLIDAY_DATE FROM Holiday WHERE HOLIDAY_DATE >= '{DateTime.Now:yyyy-MM-dd}' AND HOLIDAY_DATE <= '{DateTime.Now.AddYears(7):yyyy-MM-dd}'";
-            using var cmd = new SqlCommand(sql, conn);
-            cmd.CommandTimeout = 15;
-
-            using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            try
             {
-                var row = dt.NewRow();
-                row["Market"] = reader.GetString(0);
-                row["HolidayDate"] = reader.GetDateTime(1);
-                dt.Rows.Add(row);
+                using var conn = new SqlConnection(sqlConnStr);
+                await conn.OpenAsync();
+
+                const string sql = "SELECT MARKET, HOLIDAY_DATE FROM Holiday WHERE HOLIDAY_DATE >= @startDate AND HOLIDAY_DATE <= @endDate";
+                using var cmd = new SqlCommand(sql, conn);
+                cmd.CommandTimeout = 15;
+                cmd.Parameters.Add("@startDate", System.Data.SqlDbType.DateTime).Value = DateTime.Today;
+                cmd.Parameters.Add("@endDate", System.Data.SqlDbType.DateTime).Value = DateTime.Today.AddYears(7);
+
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var row = dt.NewRow();
+                    row["Market"] = reader["MARKET"] as string;
+                    row["HolidayDate"] = (DateTime)reader["HOLIDAY_DATE"];
+                    dt.Rows.Add(row);
+                }
+
+                Debug.WriteLine($"[DatabaseService] Holidays loaded from server: {dt.Rows.Count} rows (attempt {attempt}).");
+                SaveHolidayCache(dt);
+                return dt;
             }
-
-            Debug.WriteLine($"[DatabaseService] Holidays loaded: {dt.Rows.Count} rows.");
+            catch (SqlException ex)
+            {
+                Debug.WriteLine($"[DatabaseService] LoadHolidays attempt {attempt}/{maxAttempts} failed: {ex.Message}");
+                if (attempt < maxAttempts)
+                    await Task.Delay(100);
+            }
         }
-        catch (Exception ex)
+
+        Debug.WriteLine("[DatabaseService] All retries failed — trying local cache.");
+        var cached = LoadHolidayCache();
+        if (cached != null && cached.Rows.Count > 0)
         {
-            Debug.WriteLine($"[DatabaseService] LoadHolidays FAILED: {ex.Message}");
+            Debug.WriteLine($"[DatabaseService] Holidays loaded from cache: {cached.Rows.Count} rows.");
+            return cached;
         }
 
+        Debug.WriteLine("[DatabaseService] No cache available. Holidays will be empty.");
         return dt;
     }
 
@@ -182,71 +210,74 @@ public class DatabaseService : IDatabaseService
         }
     }
 
-    public async Task<string> GetSalesNameAsync(string username)
-    {
-        if (!IsConnectionReady())
-            return string.Empty;
+    // --- Holiday Cache ---
 
+    private static void SaveHolidayCache(DataTable dt)
+    {
         try
         {
-            await using var conn = new MySqlConnection(_connectionString);
-            await conn.OpenAsync();
-            await using var cmd = new MySqlCommand(
-                "SELECT FullName FROM userprofile WHERE UserId = @pid AND IsActive = 1 LIMIT 1", conn);
-            cmd.Parameters.AddWithValue("@pid", username.ToUpperInvariant());
-            var result = await cmd.ExecuteScalarAsync();
-            return result?.ToString() ?? string.Empty;
+            var entries = new List<HolidayCacheEntry>(dt.Rows.Count);
+            foreach (DataRow row in dt.Rows)
+            {
+                entries.Add(new HolidayCacheEntry
+                {
+                    Market = (string)row["Market"],
+                    HolidayDate = (DateTime)row["HolidayDate"]
+                });
+            }
+
+            var dir = Path.GetDirectoryName(HolidayCachePath)!;
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            File.WriteAllText(HolidayCachePath, JsonSerializer.Serialize(entries, JsonOptions));
+            Debug.WriteLine($"[DatabaseService] Holiday cache saved: {entries.Count} entries → {HolidayCachePath}");
         }
-        catch (MySqlException ex)
+        catch (Exception ex)
         {
-            Debug.WriteLine($"[DatabaseService] GetSalesName FAILED: {ex.Number} — {ex.Message}");
-            return string.Empty;
+            Debug.WriteLine($"[DatabaseService] Holiday cache save failed: {ex.Message}");
         }
     }
 
-    public async Task<string> GetReportingEntityAsync(string salesName)
+    private static DataTable? LoadHolidayCache()
     {
-        if (!IsConnectionReady())
-            return string.Empty;
-
         try
         {
-            await using var conn = new MySqlConnection(_connectionString);
-            await conn.OpenAsync();
-            await using var cmd = new MySqlCommand(
-                "SELECT ReportingEntityId FROM userprofile WHERE FullName = @fullname AND IsActive = 1 LIMIT 1", conn);
-            cmd.Parameters.AddWithValue("@fullname", salesName);
-            var result = await cmd.ExecuteScalarAsync();
-            return result?.ToString() ?? string.Empty;
+            if (!File.Exists(HolidayCachePath))
+                return null;
+
+            var entries = JsonSerializer.Deserialize<List<HolidayCacheEntry>>(
+                File.ReadAllText(HolidayCachePath), JsonOptions);
+
+            if (entries == null || entries.Count == 0)
+                return null;
+
+            var dt = new DataTable();
+            dt.Columns.Add("Market", typeof(string));
+            dt.Columns.Add("HolidayDate", typeof(DateTime));
+
+            var today = DateTime.Now.Date;
+            foreach (var entry in entries)
+            {
+                if (entry.HolidayDate >= today)
+                {
+                    var row = dt.NewRow();
+                    row["Market"] = entry.Market;
+                    row["HolidayDate"] = entry.HolidayDate;
+                    dt.Rows.Add(row);
+                }
+            }
+
+            return dt;
         }
-        catch (MySqlException ex)
+        catch (Exception ex)
         {
-            Debug.WriteLine($"[DatabaseService] GetReportingEntity FAILED: {ex.Number} — {ex.Message}");
-            return string.Empty;
+            Debug.WriteLine($"[DatabaseService] Holiday cache load failed: {ex.Message}");
+            return null;
         }
     }
 
-    public async Task<string> GetInvestmentDecisionIdAsync(string username)
-    {
-        if (!IsConnectionReady())
-            return string.Empty;
-
-        try
-        {
-            await using var conn = new MySqlConnection(_connectionString);
-            await conn.OpenAsync();
-            await using var cmd = new MySqlCommand(
-                "SELECT Mx3Id FROM userprofile WHERE UserId = @pid AND IsActive = 1 LIMIT 1", conn);
-            cmd.Parameters.AddWithValue("@pid", username.ToUpperInvariant());
-            var result = await cmd.ExecuteScalarAsync();
-            return result?.ToString() ?? string.Empty;
-        }
-        catch (MySqlException ex)
-        {
-            Debug.WriteLine($"[DatabaseService] GetInvestmentDecisionId FAILED: {ex.Number} — {ex.Message}");
-            return string.Empty;
-        }
-    }
+    // --- Helpers ---
 
     private bool IsConnectionReady()
     {
@@ -276,4 +307,10 @@ public class DatabaseService : IDatabaseService
             list.Add(reader.GetString(0));
         return list;
     }
+}
+
+internal sealed class HolidayCacheEntry
+{
+    public string Market { get; set; } = string.Empty;
+    public DateTime HolidayDate { get; set; }
 }
