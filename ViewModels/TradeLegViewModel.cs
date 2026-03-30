@@ -801,9 +801,10 @@ public partial class TradeLegViewModel : ObservableObject
                 // and holiday calendar — no need to duplicate that logic here.
                 HedgeSettlementDate = dc.GetConvention("1D").SpotDate;
             }
-            catch
+            catch (Exception ex)
             {
                 HedgeSettlementDate = null;
+                _parent.StatusMessage = $"⚠ Could not calculate hedge settlement date: {ex.Message}";
             }
         }
     }
@@ -915,7 +916,10 @@ public partial class TradeLegViewModel : ObservableObject
                         or "USDRUB" or "USDKZT" or "USDPKR" ? 1 : 2;
                     PremiumDate = dc.getForwardDate(DateTime.Today, tAdd);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _parent.StatusMessage = $"⚠ Could not calculate spot premium date: {ex.Message}";
+                }
             }
         }
         else
@@ -1109,13 +1113,13 @@ public partial class TradeLegViewModel : ObservableObject
             !leg.Pair.Equals("UNKNOWN", StringComparison.OrdinalIgnoreCase))
             CurrencyPair = leg.Pair.ToUpperInvariant();
 
-        // Buy / Sell
-        BuySell = leg.BuySell.StartsWith("S", StringComparison.OrdinalIgnoreCase)
+        // Buy / Sell — default to Buy if the parser returned null or empty
+        BuySell = leg.BuySell?.StartsWith("S", StringComparison.OrdinalIgnoreCase) == true
             ? BuySell.Sell
             : BuySell.Buy;
 
-        // Call / Put
-        CallPut = leg.PutCall.StartsWith("P", StringComparison.OrdinalIgnoreCase)
+        // Call / Put — default to Call if the parser returned null or empty
+        CallPut = leg.PutCall?.StartsWith("P", StringComparison.OrdinalIgnoreCase) == true
             ? CallPut.Put
             : CallPut.Call;
 

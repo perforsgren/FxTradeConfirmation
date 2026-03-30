@@ -16,6 +16,8 @@ public sealed class ClipboardWatcher : IClipboardWatcher
     private const int WM_CLIPBOARDUPDATE = 0x031D;
     private const int WM_GETTEXT = 0x000D;
     private const int WM_GETTEXTLENGTH = 0x000E;
+    private const uint SMTO_ABORTIFHUNG = 0x0002;
+    private const uint SendMessageTimeoutMs = 200;
 
     public event EventHandler<ClipboardChangedEventArgs>? ClipboardChanged;
 
@@ -87,7 +89,11 @@ public sealed class ClipboardWatcher : IClipboardWatcher
             if (Clipboard.ContainsText())
             {
                 text = Clipboard.GetText();
-                signature = $"T:{text?.Length ?? 0}:{text?.GetHashCode() ?? 0}";
+
+                // H12: Do NOT use GetHashCode() — hash randomisation in .NET 6+
+                // makes it non-deterministic across runs and can collide within a run.
+                // Use the full text as the dedup key (ordinal comparison below).
+                signature = text ?? string.Empty;
             }
             else
             {
@@ -99,7 +105,9 @@ public sealed class ClipboardWatcher : IClipboardWatcher
             signature = "ERR";
         }
 
-        if (_lastSignature != null && _lastSignature == signature)
+        // Ordinal string equality — zero collision risk, fully deterministic.
+        if (_lastSignature != null &&
+            string.Equals(_lastSignature, signature, StringComparison.Ordinal))
         {
             _lastEventUtc = nowUtc;
             return;
@@ -157,7 +165,7 @@ public sealed class ClipboardWatcher : IClipboardWatcher
     /// <summary>
     /// Enumerates ALL child windows of <paramref name="parentHwnd"/> recursively
     /// and collects their HWND, class name and text (via both GetWindowText and
-    /// SendMessage WM_GETTEXT so we catch owner-draw controls too).
+    /// SendMessageTimeout WM_GETTEXT so we catch owner-draw controls too).
     /// The debug dump is written to <paramref name="debugInfo"/>.
     /// The best candidate for a chat name (first non-empty, non-root child title) is returned.
     /// </summary>
@@ -175,8 +183,8 @@ public sealed class ClipboardWatcher : IClipboardWatcher
             try
             {
                 var cls = GetWindowClass(hwnd);
-                var title = GetWindowTitle(hwnd);           // WM_GETTEXT via GetWindowText
-                var msgTxt = GetWindowTextViaSendMessage(hwnd); // explicit SendMessage
+                var title = GetWindowTitle(hwnd);
+                var msgTxt = GetWindowTextViaSendMessageTimeout(hwnd);
 
                 // Merge — prefer the longer of the two
                 var text = msgTxt.Length >= title.Length ? msgTxt : title;
@@ -209,19 +217,29 @@ public sealed class ClipboardWatcher : IClipboardWatcher
     }
 
     /// <summary>
-    /// Reads a window's text via <c>SendMessage(WM_GETTEXT)</c> rather than
-    /// <c>GetWindowText</c> — catches owner-draw and custom controls that
-    /// override WM_GETTEXT but don't call DefWindowProc.
+    /// Reads a window's text via <c>SendMessageTimeout(WM_GETTEXT)</c> with a
+    /// <see cref="SendMessageTimeoutMs"/>ms cap and <c>SMTO_ABORTIFHUNG</c>.
+    /// Replaces the former <c>SendMessage</c> overload which could block the UI
+    /// thread indefinitely if the target process's message pump was unresponsive.
     /// </summary>
-    private static string GetWindowTextViaSendMessage(IntPtr hWnd)
+    private static string GetWindowTextViaSendMessageTimeout(IntPtr hWnd)
     {
         if (hWnd == IntPtr.Zero) return "";
         try
         {
-            var len = (int)SendMessage(hWnd, WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero);
+            // First get the length
+            if (SendMessageTimeout(hWnd, WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero,
+                    SMTO_ABORTIFHUNG, SendMessageTimeoutMs, out var lenResult) == IntPtr.Zero)
+                return "";
+
+            var len = (int)lenResult;
             if (len <= 0) return "";
+
             var sb = new StringBuilder(len + 2);
-            SendMessage(hWnd, WM_GETTEXT, (IntPtr)(len + 1), sb);
+            if (SendMessageTimeout(hWnd, WM_GETTEXT, (IntPtr)(len + 1), sb,
+                    SMTO_ABORTIFHUNG, SendMessageTimeoutMs, out _) == IntPtr.Zero)
+                return "";
+
             return sb.ToString();
         }
         catch { return ""; }
@@ -284,11 +302,17 @@ public sealed class ClipboardWatcher : IClipboardWatcher
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, StringBuilder? lParam);
+    // H13: SendMessageTimeout replaces SendMessage for cross-process WM_GETTEXT calls.
+    // SMTO_ABORTIFHUNG returns immediately if the target thread is hung.
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam,
+        uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd, int msg, IntPtr wParam, StringBuilder lParam,
+        uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int Left, Top, Right, Bottom; }

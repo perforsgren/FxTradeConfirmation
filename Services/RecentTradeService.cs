@@ -23,7 +23,7 @@ public class RecentTradeService : IRecentTradeService
 
     public RecentTradeService(string basePath)
     {
-        _basePath = basePath;
+        _basePath = Path.GetFullPath(basePath);
         _indexPath = Path.Combine(_basePath, IndexFileName);
         _lockPath = Path.Combine(_basePath, LockFileName);
     }
@@ -36,7 +36,7 @@ public class RecentTradeService : IRecentTradeService
         var tradeData = new SavedTradeData { Legs = legs.ToList() };
 
         // Write the individual trade file first (no contention — unique file name)
-        var tradePath = Path.Combine(_basePath, entry.FileName);
+        var tradePath = ResolveTradeFilePath(entry.FileName);
         var tradeJson = JsonSerializer.Serialize(tradeData, JsonOptions);
         await File.WriteAllTextAsync(tradePath, tradeJson);
 
@@ -54,7 +54,7 @@ public class RecentTradeService : IRecentTradeService
 
                 try
                 {
-                    var orphanPath = Path.Combine(_basePath, removed.FileName);
+                    var orphanPath = ResolveTradeFilePath(removed.FileName);
                     if (File.Exists(orphanPath))
                         File.Delete(orphanPath);
                 }
@@ -81,7 +81,7 @@ public class RecentTradeService : IRecentTradeService
 
     public async Task<SavedTradeData?> LoadTradeAsync(RecentTradeEntry entry)
     {
-        var tradePath = Path.Combine(_basePath, entry.FileName);
+        var tradePath = ResolveTradeFilePath(entry.FileName);
         if (!File.Exists(tradePath))
             return null;
 
@@ -101,11 +101,48 @@ public class RecentTradeService : IRecentTradeService
         // Delete the trade file outside the lock — unique name, no contention
         try
         {
-            var tradePath = Path.Combine(_basePath, entry.FileName);
+            var tradePath = ResolveTradeFilePath(entry.FileName);
             if (File.Exists(tradePath))
                 File.Delete(tradePath);
         }
         catch { /* index already updated — ignore stale file */ }
+    }
+
+    // ----------------------------------------------------------------
+    //  H14: Path traversal guard
+    //  All entry.FileName values are resolved through this method.
+    //  It verifies that the final path stays within _basePath, blocking
+    //  entries like "../../etc/passwd" from a corrupt index file.
+    // ----------------------------------------------------------------
+
+    /// <summary>
+    /// Resolves <paramref name="fileName"/> to a full path under <see cref="_basePath"/>
+    /// and throws <see cref="InvalidOperationException"/> if the result escapes the
+    /// base directory (path traversal attempt).
+    /// </summary>
+    private string ResolveTradeFilePath(string fileName)
+    {
+        // Reject anything that looks like a rooted path or contains directory separators
+        // before even calling Path.GetFullPath — avoids platform edge cases.
+        if (string.IsNullOrWhiteSpace(fileName)
+            || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            throw new InvalidOperationException(
+                $"Invalid trade file name: '{fileName}'.");
+        }
+
+        var fullPath = Path.GetFullPath(Path.Combine(_basePath, fileName));
+
+        // Ensure the resolved path is strictly inside _basePath.
+        // Use OrdinalIgnoreCase to handle case-insensitive file systems (Windows/NTFS).
+        if (!fullPath.StartsWith(_basePath + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Path traversal detected: '{fileName}' resolves outside the base directory.");
+        }
+
+        return fullPath;
     }
 
     // ----------------------------------------------------------------
@@ -126,14 +163,30 @@ public class RecentTradeService : IRecentTradeService
     {
         var json = JsonSerializer.Serialize(index, JsonOptions);
 
-        // Atomic commit: write to a temp file then rename over the real index.
-        // File.Move with overwrite:true is atomic on NTFS/SMB — the index is
-        // never left in a half-written state if the process is killed mid-write.
+        // H15: File.Move with overwrite:true is atomic on local NTFS but is NOT
+        // guaranteed to be atomic on SMB/network shares — .NET makes no such promise.
+        // Strategy: attempt Move first (fast path, atomic on local NTFS).
+        // If Move fails (e.g. cross-volume or SMB rename rejection), fall back to
+        // Delete+Move which is non-atomic but still leaves a consistent file:
+        // the worst case is a missing index (rebuilt as empty) rather than corruption.
         var tmpPath = _indexPath + ".tmp." + Environment.ProcessId;
         try
         {
             await File.WriteAllTextAsync(tmpPath, json);
-            File.Move(tmpPath, _indexPath, overwrite: true);
+
+            try
+            {
+                File.Move(tmpPath, _indexPath, overwrite: true);
+            }
+            catch (IOException)
+            {
+                // Fallback for SMB shares where atomic rename is not guaranteed:
+                // delete the target first, then move. Non-atomic but safe — a crash
+                // here leaves no index rather than a corrupt one; the empty-index
+                // fallback in ReadIndexCoreAsync handles that.
+                try { File.Delete(_indexPath); } catch { /* ignore if already gone */ }
+                File.Move(tmpPath, _indexPath, overwrite: false);
+            }
         }
         catch
         {
@@ -158,13 +211,13 @@ public class RecentTradeService : IRecentTradeService
     //  Any competing writer backs off up to MaxAttempts × RetryDelayMs before
     //  giving up.
     //
-    //  Index writes use an atomic write-then-rename commit so the index is
-    //  never left in a half-written state even if the process is killed
-    //  between the write and the rename.
+    //  Index writes use a write-then-rename commit so the index is never left
+    //  in a half-written state even if the process is killed mid-write.
+    //  Note: rename atomicity is guaranteed on local NTFS but not on SMB.
     // ----------------------------------------------------------------
 
-    private const int MaxAttempts       = 15;
-    private const int RetryDelayMs      = 200;
+    private const int MaxAttempts        = 15;
+    private const int RetryDelayMs       = 200;
     private const int StaleLockAgeSeconds = 30;
 
     private async Task WithIndexLockAsync(Func<Task> action)

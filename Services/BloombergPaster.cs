@@ -59,7 +59,10 @@ public sealed class BloombergPaster : IBloombergPaster
             return false;
 
         // ── 2. Activate Bloomberg (restores if minimised/hidden behind others) 
-        await Application.Current.Dispatcher.InvokeAsync(() =>
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return false;
+
+        await dispatcher.InvokeAsync(() =>
         {
             GetWindowThreadProcessId(hwnd, out uint bbPid);
             AllowSetForegroundWindow(bbPid);
@@ -72,15 +75,19 @@ public sealed class BloombergPaster : IBloombergPaster
             return false;
 
         // ── 3. Open new tab: Ctrl+T ──────────────────────────────────────────
-        SendKeyCombo(VK_CONTROL, VK_T);
+        // SendInput returns 0 if UIPI blocks the call (Bloomberg runs at higher
+        // integrity level). Treat that as a hard failure — paste would be a no-op.
+        if (!SendKeyCombo(VK_CONTROL, VK_T))
+            return false;
+
         await Task.Delay(_options.NewTabDelayMs);
 
         // ── 4. Write OVML to clipboard ───────────────────────────────────────
         SuppressClipboardEvents?.Invoke(true);
+        bool clipboardOk;
         try
         {
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-                SetClipboardTextRobust(ovmlText));
+            clipboardOk = await SetClipboardTextRobustAsync(ovmlText);
         }
         finally
         {
@@ -88,14 +95,19 @@ public sealed class BloombergPaster : IBloombergPaster
             SuppressClipboardEvents?.Invoke(false);
         }
 
+        if (!clipboardOk) return false;
+
         await Task.Delay(_options.ClipboardSettleMs);
 
         // ── 5. Paste: Ctrl+V ─────────────────────────────────────────────────
-        SendKeyCombo(VK_CONTROL, VK_V);
+        if (!SendKeyCombo(VK_CONTROL, VK_V))
+            return false;
+
         await Task.Delay(_options.AfterPasteDelayMs);
 
         // ── 6. Execute: Enter ────────────────────────────────────────────────
-        SendKey(VK_RETURN);
+        if (!SendKey(VK_RETURN))
+            return false;
 
         if (_options.VerifyPasteAsync is { } verify)
             return await verify(CancellationToken.None);
@@ -156,8 +168,8 @@ public sealed class BloombergPaster : IBloombergPaster
             {
                 // Passes structural checks but below the child-count floor —
                 // track as fallback in case terminal hasn't fully initialised.
-                var exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
-                var style = GetWindowLong(hWnd, GWL_STYLE);
+                var exStyle = GetWindowLongSafe(hWnd, GWL_EXSTYLE);
+                var style   = GetWindowLongSafe(hWnd, GWL_STYLE);
                 bool structuralMatch = (exStyle & WS_EX_APPWINDOW) != 0
                     && (exStyle & WS_EX_TOOLWINDOW) == 0
                     && (style & WS_THICKFRAME) != 0;
@@ -195,13 +207,13 @@ public sealed class BloombergPaster : IBloombergPaster
     {
         childCount = 0;
 
-        var exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+        var exStyle = GetWindowLongSafe(hWnd, GWL_EXSTYLE);
         if ((exStyle & WS_EX_APPWINDOW) == 0)
             return false;
         if ((exStyle & WS_EX_TOOLWINDOW) != 0)
             return false;
 
-        var style = GetWindowLong(hWnd, GWL_STYLE);
+        var style = GetWindowLongSafe(hWnd, GWL_STYLE);
         if ((style & WS_THICKFRAME) == 0)
             return false;
 
@@ -234,25 +246,46 @@ public sealed class BloombergPaster : IBloombergPaster
 
     // ── Clipboard with retry ─────────────────────────────────────────────────
 
-    private static void SetClipboardTextRobust(string text, int maxRetries = 5)
+    /// <summary>
+    /// Writes <paramref name="text"/> to the clipboard, retrying up to
+    /// <paramref name="maxRetries"/> times on <see cref="COMException"/>
+    /// (clipboard locked by another process).
+    /// Uses <see cref="Task.Delay"/> between retries so the UI thread is
+    /// never blocked — unlike the previous <see cref="Thread.Sleep"/> version.
+    /// Must be called from the UI/STA thread (Clipboard requires STA).
+    /// Returns <see langword="false"/> if <see cref="Application.Current"/>
+    /// is null (application shutting down).
+    /// </summary>
+    private static async Task<bool> SetClipboardTextRobustAsync(string text, int maxRetries = 5)
     {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return false;
+
         for (int i = 0; i < maxRetries; i++)
         {
             try
             {
-                Clipboard.SetText(text);
-                return;
+                await dispatcher.InvokeAsync(() => Clipboard.SetText(text));
+                return true;
             }
             catch (COMException) when (i < maxRetries - 1)
             {
-                Thread.Sleep(50);
+                await Task.Delay(50);
             }
         }
+
+        return false;
     }
 
     // ── SendInput helpers ────────────────────────────────────────────────────
 
-    private static void SendKeyCombo(byte modifier, byte key)
+    /// <summary>
+    /// Sends a modifier+key combo via SendInput.
+    /// Returns <see langword="false"/> if SendInput reports that zero events
+    /// were injected — which happens when UIPI blocks the call because the
+    /// target process runs at a higher integrity level.
+    /// </summary>
+    private static bool SendKeyCombo(byte modifier, byte key)
     {
         INPUT[] inputs =
         [
@@ -261,17 +294,22 @@ public sealed class BloombergPaster : IBloombergPaster
             MakeKeyInput(key,      KEYEVENTF_KEYUP),
             MakeKeyInput(modifier, KEYEVENTF_KEYUP),
         ];
-        SendInput((uint)inputs.Length, inputs, InputSize);
+        return SendInput((uint)inputs.Length, inputs, InputSize) == (uint)inputs.Length;
     }
 
-    private static void SendKey(byte vk)
+    /// <summary>
+    /// Sends a single key press+release via SendInput.
+    /// Returns <see langword="false"/> if SendInput reports that zero events
+    /// were injected.
+    /// </summary>
+    private static bool SendKey(byte vk)
     {
         INPUT[] inputs =
         [
             MakeKeyInput(vk, 0),
             MakeKeyInput(vk, KEYEVENTF_KEYUP),
         ];
-        SendInput((uint)inputs.Length, inputs, InputSize);
+        return SendInput((uint)inputs.Length, inputs, InputSize) == (uint)inputs.Length;
     }
 
     private static INPUT MakeKeyInput(byte vk, uint flags) => new()
@@ -315,12 +353,12 @@ public sealed class BloombergPaster : IBloombergPaster
     private const byte VK_RETURN = 0x0D;
     private const uint INPUT_KEYBOARD = 1;
 
-    private const int GWL_STYLE = -16;
+    private const int GWL_STYLE   = -16;
     private const int GWL_EXSTYLE = -20;
 
-    private const int WS_THICKFRAME = 0x00040000;
-    private const int WS_EX_TOOLWINDOW = 0x00000080;
-    private const int WS_EX_APPWINDOW = 0x00040000;
+    private const nint WS_THICKFRAME    = 0x00040000;
+    private const nint WS_EX_TOOLWINDOW = 0x00000080;
+    private const nint WS_EX_APPWINDOW  = 0x00040000;
 
     // ── P/Invoke ─────────────────────────────────────────────────────────────
 
@@ -373,8 +411,17 @@ public sealed class BloombergPaster : IBloombergPaster
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    // GetWindowLongPtr — korrekt 64-bit P/Invoke (returnerar IntPtr, ej int)
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    /// <summary>
+    /// Plattformssäker wrapper för GetWindowLongPtr.
+    /// Returnerar <see cref="nint"/> så att bitmaskning mot
+    /// <c>nint</c>-konstanter fungerar utan cast.
+    /// </summary>
+    private static nint GetWindowLongSafe(IntPtr hWnd, int nIndex)
+        => (nint)GetWindowLongPtr(hWnd, nIndex);
 
     // ── Structs ───────────────────────────────────────────────────────────────
 

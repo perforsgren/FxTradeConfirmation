@@ -1,7 +1,9 @@
 ﻿using FxTradeConfirmation.Models;
+using OpenAI;
 using OpenAI.Chat;
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -29,8 +31,16 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
     // ── Config ───────────────────────────────────────────────────────────────
     private readonly string _promptFilePath;
 
+    // ── Owned HttpClient — disposed deterministically in Dispose() ───────────
+    // ChatClient (OpenAI SDK) does not implement IDisposable; the only way to
+    // release the underlying socket is to own the HttpClient ourselves and pass
+    // it in via OpenAIClientOptions.
+    private readonly HttpClient _httpClient;
+
     // ── Shared ChatClient (one instance per OvmlBuilder — same pattern as HttpClient) ──
     private readonly ChatClient _chatClient;
+
+    private bool _disposed;
 
     // ── Debug / diagnostics ──────────────────────────────────────────────────
     public string LastJson { get; private set; } = string.Empty;
@@ -44,10 +54,23 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
         _promptFilePath = promptFilePath;
         var resolvedModel = string.IsNullOrWhiteSpace(model) ? "gpt-5.4-mini" : model;
         var resolvedKey   = ResolveApiKey(apiKey, promptFilePath);
-        _chatClient = new ChatClient(resolvedModel, resolvedKey);
+
+        _httpClient = new HttpClient();
+
+        var options = new OpenAIClientOptions
+        {
+            Transport = new System.ClientModel.Primitives.HttpClientPipelineTransport(_httpClient)
+        };
+
+        _chatClient = new ChatClient(resolvedModel, new System.ClientModel.ApiKeyCredential(resolvedKey), options);
     }
 
-    public void Dispose() => (_chatClient as IDisposable)?.Dispose();
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _httpClient.Dispose();
+    }
 
     // ── IOvmlParser (sync — NOT supported for AI parser) ─────────────────────
 
@@ -75,10 +98,31 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
             var success = !string.IsNullOrEmpty(result.Ovml) && result.Legs.Count > 0;
             return (success, result.Ovml, result.Legs);
         }
-        catch
+        catch (OperationCanceledException)
         {
+            // Propagate cancellation — caller needs to know the parse was aborted.
+            throw;
+        }
+        catch (OutOfMemoryException)
+        {
+            // Fatal CLR exceptions must not be swallowed.
+            throw;
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException        // network unreachable
+         || ex is TaskCanceledException       // timeout (not CancellationToken)
+         || ex is JsonException               // malformed API response
+         || ex is InvalidOperationException   // SDK usage errors
+         || ex is IOException)               // prompt file read failure
+        {
+            // Known recoverable failures — return empty so the caller can
+            // fall back gracefully. The exception type is preserved in the
+            // debug diagnostic below but does not crash the application.
+            System.Diagnostics.Debug.WriteLine(
+                $"[OvmlBuilder.TryParseAsync] {ex.GetType().Name}: {ex.Message}");
             return (false, string.Empty, []);
         }
+        // Any other unexpected exception propagates to the caller unmodified.
     }
 
     // ── Core generation (async only) ─────────────────────────────────────────
@@ -341,19 +385,36 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
     private static string NormalizeFxNumber(string raw)
     {
         raw = raw.Replace(" ", string.Empty);
-        int commas = raw.Count(c => c == ','), dots = raw.Count(c => c == '.');
+        int commas = raw.Count(c => c == ',');
+        int dots   = raw.Count(c => c == '.');
 
+        // Both separators present — unambiguous: the last one is the decimal separator.
         if (commas > 0 && dots > 0)
             return raw.LastIndexOf('.') > raw.LastIndexOf(',')
-                ? raw.Replace(",", string.Empty)
-                : raw.Replace(".", string.Empty).Replace(",", ".");
+                ? raw.Replace(",", string.Empty)                          // 1,234.56 → 1234.56
+                : raw.Replace(".", string.Empty).Replace(",", ".");       // 1.234,56 → 1234.56
 
+        // Single comma — could be thousands ("1,000") or decimal ("1,085").
+        // H18 fix: treat comma as thousands separator ONLY when the integer part
+        // has ≥ 2 digits (i.e. value ≥ 10,000 range). A single-digit integer part
+        // like "1,085" is unambiguously a decimal in FX-rate context (e.g. EUR/GBP).
         if (commas == 1)
         {
-            var p = raw.Split(',');
-            return p[1].Length == 3 ? p[0] + p[1] : p[0] + "." + p[1];
+            var parts = raw.Split(',');
+            bool intPartIsMultiDigit = parts[0].Length >= 2;
+            bool fracPartIsExactly3  = parts[1].Length == 3;
+
+            // Thousands separator: e.g. "10,000" or "1,000,000" sub-cases.
+            // Only strip the comma if the integer part is multi-digit AND the
+            // fractional part is exactly 3 digits — the canonical thousands pattern.
+            if (intPartIsMultiDigit && fracPartIsExactly3)
+                return parts[0] + parts[1];    // "10,000" → "10000"
+
+            // Everything else (including "1,085") → decimal separator.
+            return parts[0] + "." + parts[1];  // "1,085" → "1.085"
         }
 
+        // Multiple dots — last dot is decimal, the rest are thousands separators.
         if (dots > 1)
         {
             int last = raw.LastIndexOf('.');

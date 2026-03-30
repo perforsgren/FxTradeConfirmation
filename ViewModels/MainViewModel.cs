@@ -19,7 +19,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private readonly IRecentTradeService? _recentTradeService;
     private readonly IClipboardWatcher? _clipboardWatcher;
     private readonly IOptionQueryFilter? _optionQueryFilter;
-    private IOvmlParser _regexParser;
+    private volatile IOvmlParser _regexParser;
     private readonly IOvmlParser _aiParser;
     private readonly IBloombergPaster? _bloombergPaster;
 
@@ -98,6 +98,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>Whether the clipboard watcher auto-capture is enabled.</summary>
     [ObservableProperty] private bool _clipboardAutoEnabled;
+
+    /// <summary>
+    /// True while a Save operation is in flight.
+    /// Used as the CanExecute guard for <see cref="SaveCommand"/> to prevent
+    /// double-submits from rapid button clicks.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    private bool _isSaving;
 
     /// <summary>
     /// Brush resource key for total premium color:
@@ -209,12 +218,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
         try
         {
             // Bring MainWindow to front immediately when parsing starts
-            Application.Current.Dispatcher.Invoke(() => BringToFrontRequested?.Invoke());
+            await (Application.Current?.Dispatcher
+                .InvokeAsync(() => BringToFrontRequested?.Invoke())
+                .Task
+                ?? Task.CompletedTask);
 
             await SetStatusAsync("⏳ Parsing…");
 
+            // Snapshot the parser reference once — _regexParser may be replaced on the
+            // UI thread by InitializeAsync while this task is running on the thread pool.
+            // volatile + local snapshot guarantees we see the latest write and use a
+            // consistent instance for the duration of this parse cycle.
+            var parser = _regexParser;
+
             bool usedAi = false;
-            bool success = _regexParser.TryParse(e.Text!, out var ovml, out var legs);
+            bool success = parser.TryParse(e.Text!, out var ovml, out var legs);
 
             if (!success)
             {
@@ -238,8 +256,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             // Use TCS to wait until the dialog is actually closed before releasing the lock
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-                ClipboardCaptureDialogRequested?.Invoke(e, ovml, legs, usedAi, () => tcs.TrySetResult(true)));
+            await (Application.Current?.Dispatcher
+                .InvokeAsync(() =>
+                    ClipboardCaptureDialogRequested?.Invoke(e, ovml, legs, usedAi, () => tcs.TrySetResult(true)))
+                .Task
+                ?? Task.CompletedTask);
 
             // Block until the view signals dialog closed
             await tcs.Task;
@@ -250,8 +271,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
-    private Task SetStatusAsync(string message) =>
-        Application.Current.Dispatcher.InvokeAsync(() => StatusMessage = message).Task;
+    private Task SetStatusAsync(string message)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return Task.CompletedTask;
+        return dispatcher.InvokeAsync(() => StatusMessage = message).Task;
+    }
 
     // --- Bloomberg Paster ---
 
@@ -296,7 +321,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             // Ensure the flag is cleared on the UI thread — the same thread
             // that reads it in OnClipboardChanged (via WndProc / WM_CLIPBOARDUPDATE).
-            Application.Current.Dispatcher.Invoke(() => _suppressClipboardEvents = false);
+            // InvokeAsync (non-blocking) eliminates the deadlock risk that
+            // synchronous Invoke would cause if the UI thread is waiting on this task.
+            await (Application.Current?.Dispatcher
+                .InvokeAsync(() => _suppressClipboardEvents = false)
+                .Task
+                ?? Task.CompletedTask);
         }
     }
 
@@ -311,11 +341,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 var data = await DatabaseService.LoadReferenceDataAsync();
 
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    ReferenceData = data;
-                    _regexParser = new OvmlBuilderAP3(ReferenceData.CurrencyPairs);
-                });
+                await (Application.Current?.Dispatcher
+                    .InvokeAsync(() =>
+                    {
+                        ReferenceData = data;
+                        _regexParser = new OvmlBuilderAP3(ReferenceData.CurrencyPairs);
+                    })
+                    .Task
+                    ?? Task.CompletedTask);
 
                 await SetupUserDefaults();
 
@@ -351,41 +384,42 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Wait for reference data lookup maps to be ready before triggering cross-updates.
         // The InvestmentDecisionID default (Environment.UserName) was set at construction,
         // but the lookup maps weren't loaded yet. Re-trigger now.
-        Application.Current.Dispatcher.Invoke(() =>
-        {
-            var currentUser = Environment.UserName.ToUpperInvariant();
-
-            // Resolve Trader from DB: Environment.UserName → userprofile.Mx3Id
-            string? resolvedTrader = null;
-            if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
-                && !string.IsNullOrEmpty(mx3Id))
+        await (Application.Current?.Dispatcher
+            .InvokeAsync(() =>
             {
-                resolvedTrader = mx3Id;
-            }
+                var currentUser = Environment.UserName.ToUpperInvariant();
 
-            // Resolve Calypso Book from DB: Environment.UserName → stp_calypso_book_user.CalypsoBook
-            // Fallback to "FX51" if user not found in the mapping table
-            string resolvedCalypsoBook = ReferenceData.TraderIdToCalypsoBook.TryGetValue(currentUser, out var book)
-                ? book
-                : "FX51";
+                // Resolve Trader from DB: Environment.UserName → userprofile.Mx3Id
+                string? resolvedTrader = null;
+                if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
+                    && !string.IsNullOrEmpty(mx3Id))
+                {
+                    resolvedTrader = mx3Id;
+                }
 
-            foreach (var leg in Legs)
-            {
-                // Set Trader from DB lookup (falls back to Environment.UserName if not found)
-                if (resolvedTrader != null)
-                    leg.Trader = resolvedTrader;
+                // Resolve Calypso Book from DB: Environment.UserName → stp_calypso_book_user.CalypsoBook
+                // Fallback to "FX51" if user not found in the mapping table
+                string resolvedCalypsoBook = ReferenceData.TraderIdToCalypsoBook.TryGetValue(currentUser, out var book)
+                    ? book
+                    : "FX51";
 
-                // Set Calypso Book from DB lookup
-                leg.BookCalypso = resolvedCalypsoBook;
+                foreach (var leg in Legs)
+                {
+                    // Set Trader from DB lookup (falls back to Environment.UserName if not found)
+                    if (resolvedTrader != null)
+                        leg.Trader = resolvedTrader;
 
-                // Re-assign to trigger OnInvestmentDecisionIDChanged which sets Sales + ReportingEntity
-                var currentId = leg.InvestmentDecisionID;
-                leg.InvestmentDecisionID = string.Empty;
-                leg.InvestmentDecisionID = currentId;
-            }
-        });
+                    // Set Calypso Book from DB lookup
+                    leg.BookCalypso = resolvedCalypsoBook;
 
-        await Task.CompletedTask;
+                    // Re-assign to trigger OnInvestmentDecisionIDChanged which sets Sales + ReportingEntity
+                    var currentId = leg.InvestmentDecisionID;
+                    leg.InvestmentDecisionID = string.Empty;
+                    leg.InvestmentDecisionID = currentId;
+                }
+            })
+            .Task
+            ?? Task.CompletedTask);
     }
 
     // --- Commands ---
@@ -448,7 +482,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         UpdateSaveValidation();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanExecuteSave))]
     private async Task SaveAsync()
     {
         if (_ingestService == null)
@@ -463,6 +497,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
+        IsSaving = true;
         StatusMessage = "Saving trades…";
 
         try
@@ -501,7 +536,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             StatusMessage = $"Save failed: {ex.Message}";
         }
+        finally
+        {
+            IsSaving = false;
+        }
     }
+
+    private bool CanExecuteSave() => !IsSaving;
 
     [RelayCommand]
     private void OpenRecent()
@@ -1030,16 +1071,29 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             Interval = TimeSpan.FromSeconds(6)
         };
-        _connectionTimer.Tick += async (_, _) =>
-        {
-            _connectionTimer.Stop();
-            var connected = await DatabaseService.TestConnectionAsync();
-            IsConnected = connected;
-            _connectionTimer.Interval = connected
-                ? TimeSpan.FromMinutes(10)
-                : TimeSpan.FromMinutes(1);
-            _connectionTimer.Start();
-        };
+        _connectionTimer.Tick += OnConnectionTimerTick;
+        _connectionTimer.Start();
+    }
+
+    /// <summary>
+    /// Named handler so the async Task can be properly observed.
+    /// An inline <c>async (_, _) =&gt; { ... }</c> on Tick is <c>async void</c> —
+    /// any exception escapes as unhandled and crashes the app.
+    /// </summary>
+    private void OnConnectionTimerTick(object? sender, EventArgs e)
+    {
+        ConnectionMonitorCycleAsync().FireAndForget(
+            onError: msg => StatusMessage = $"⚠ Connection monitor error: {msg}");
+    }
+
+    private async Task ConnectionMonitorCycleAsync()
+    {
+        _connectionTimer!.Stop();
+        var connected = await DatabaseService.TestConnectionAsync();
+        IsConnected = connected;
+        _connectionTimer.Interval = connected
+            ? TimeSpan.FromMinutes(10)
+            : TimeSpan.FromMinutes(1);
         _connectionTimer.Start();
     }
 
@@ -1048,11 +1102,15 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (_connectionTimer is not null)
         {
             _connectionTimer.Stop();
+            _connectionTimer.Tick -= OnConnectionTimerTick;
             _connectionTimer = null;
         }
 
         if (_clipboardWatcher is not null)
+        {
             _clipboardWatcher.ClipboardChanged -= OnClipboardChanged;
+            _clipboardWatcher.Dispose(); // Stop() + HwndSource.Dispose() + native window cleanup
+        }
 
         _ingestService?.Dispose();
     }
