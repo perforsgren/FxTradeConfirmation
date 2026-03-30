@@ -79,7 +79,9 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
         foreach (var word in new[] { "morning", "hello", "hi", "!" })
             text = Regex.Replace(text, @"\b" + Regex.Escape(word) + @"\b", string.Empty, RegexOptions.IgnoreCase);
 
-        return Regex.Replace(text, @"[^\w\s\.\,]", string.Empty);
+        // Keep word chars, whitespace, dots, commas, and the characters that
+        // date formats (/ -), time references (:) and signed numbers (+) rely on.
+        return Regex.Replace(text, @"[^\w\s\.\,\/\-\:\+]", string.Empty);
     }
 
     private string ExtractPair(string text)

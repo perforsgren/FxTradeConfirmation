@@ -403,11 +403,18 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
     private static long ParseNotional(string n)
     {
         n = n.ToUpperInvariant().Replace(" ", string.Empty).Replace(",", string.Empty);
+
+        // Explicit M-suffix → caller already expressed millions
         if (n.EndsWith('M'))
             return decimal.TryParse(n[..^1], NumberStyles.Any, CultureInfo.InvariantCulture, out var m)
                 ? (long)(m * 1_000_000m) : 0;
-        return decimal.TryParse(n, NumberStyles.Any, CultureInfo.InvariantCulture, out var p)
-            ? (long)(p * 1_000_000m) : 0;
+
+        if (!decimal.TryParse(n, NumberStyles.Any, CultureInfo.InvariantCulture, out var p) || p == 0)
+            return 0;
+
+        // If the value is already in absolute scale (>= 10 000) treat it as-is.
+        // Values below 10 000 are assumed to be expressed in millions (e.g. AI returns "5" → 5 M).
+        return p >= 10_000m ? (long)p : (long)(p * 1_000_000m);
     }
 
     private static string ResolveApiKey(string? ctorKey, string promptFilePath)

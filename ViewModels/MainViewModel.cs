@@ -796,7 +796,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         else
         {
             var solvedPremium = PremiumCalculator.CalculatePremium(
-                solvedAmount, _solvingLeg.Notional, _solvingLeg.PremiumStyle, _solvingLeg.Strike);
+                solvedAmount, _solvingLeg.Notional, _solvingLeg.PremiumStyle, _solvingLeg.Strike,
+                _solvingLeg.CurrencyPair);
 
             _solvingLeg.ApplyPremiumInput(
                 (solvedPremium ?? 0m).ToString("G29", System.Globalization.CultureInfo.InvariantCulture));

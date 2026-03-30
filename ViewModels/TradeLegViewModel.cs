@@ -434,11 +434,17 @@ public partial class TradeLegViewModel : ObservableObject
         if (amount.HasValue)
         {
             _isRecalculating = true;
-            var signed = PremiumCalculator.ApplySign(amount.Value, BuySell);
-            _lastValidPremiumAmount = signed;
-            int decimals = _userPremiumAmountDecimals ?? 2;
-            SetProperty(ref _premiumAmountText, FormatPremiumAmount(signed, decimals), nameof(PremiumAmountText));
-            _isRecalculating = false;
+            try
+            {
+                var signed = PremiumCalculator.ApplySign(amount.Value, BuySell);
+                _lastValidPremiumAmount = signed;
+                int decimals = _userPremiumAmountDecimals ?? 2;
+                SetProperty(ref _premiumAmountText, FormatPremiumAmount(signed, decimals), nameof(PremiumAmountText));
+            }
+            finally
+            {
+                _isRecalculating = false;
+            }
         }
     }
 
@@ -453,10 +459,16 @@ public partial class TradeLegViewModel : ObservableObject
         if (prem.HasValue)
         {
             _isRecalculating = true;
-            _lastValidPremium = prem.Value;
-            int decimals = _userPremiumDecimals ?? PremiumDefaultDecimals;
-            SetProperty(ref _premiumText, FormatPremium(prem.Value, decimals), nameof(PremiumText));
-            _isRecalculating = false;
+            try
+            {
+                _lastValidPremium = prem.Value;
+                int decimals = _userPremiumDecimals ?? PremiumDefaultDecimals;
+                SetProperty(ref _premiumText, FormatPremium(prem.Value, decimals), nameof(PremiumText));
+            }
+            finally
+            {
+                _isRecalculating = false;
+            }
         }
     }
 
@@ -780,15 +792,14 @@ public partial class TradeLegViewModel : ObservableObject
             return;
         }
 
-        if (Hedge == HedgeType.Spot && CurrencyPair.Length >= 6 && _parent.Holidays.Rows.Count >= 0)
+        if (Hedge == HedgeType.Spot && CurrencyPair.Length >= 6 && _parent.Holidays.Rows.Count > 0)
         {
             try
             {
                 var dc = new DateConvention(CurrencyPair, _parent.Holidays);
-                var spotDate = dc.getForwardDate(DateTime.Today,
-                    CurrencyPair.Replace("/", "") is "USDCAD" or "USDTRY" or "USDPHP"
-                        or "USDRUB" or "USDKZT" or "USDPKR" ? 1 : 2);
-                HedgeSettlementDate = spotDate;
+                // GetConvention computes SpotDate using the correct T+1/T+2 rule
+                // and holiday calendar — no need to duplicate that logic here.
+                HedgeSettlementDate = dc.GetConvention("1D").SpotDate;
             }
             catch
             {

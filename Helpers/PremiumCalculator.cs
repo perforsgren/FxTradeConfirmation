@@ -5,11 +5,22 @@ namespace FxTradeConfirmation.Helpers;
 public static class PremiumCalculator
 {
     /// <summary>
+    /// Strips separators (/, -, _) from a currency pair before inspection.
+    /// </summary>
+    private static string Normalize(string currencyPair) =>
+        currencyPair.Replace("/", string.Empty)
+                    .Replace("-", string.Empty)
+                    .Replace("_", string.Empty);
+
+    /// <summary>
     /// Returns the pip divisor for the given currency pair.
     /// JPY as quote currency uses 100; all other pairs use 10 000.
     /// </summary>
-    public static decimal PipDivisor(string currencyPair) =>
-        currencyPair.Length >= 6 && currencyPair[3..6] == "JPY" ? 100m : 10_000m;
+    public static decimal PipDivisor(string currencyPair)
+    {
+        string normalized = Normalize(currencyPair);
+        return normalized.Length >= 6 && normalized[3..6] == "JPY" ? 100m : 10_000m;
+    }
 
     /// <summary>
     /// Calculate PremiumAmount from Premium (pips/pct) and Notional.

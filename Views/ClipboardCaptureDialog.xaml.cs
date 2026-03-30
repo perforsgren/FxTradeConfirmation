@@ -160,7 +160,7 @@ public partial class ClipboardCaptureDialog : Window
     private void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape) { Result = ClipboardCaptureAction.Reject; Close(); }
-        else if (e.Key == Key.Enter) { Result = ClipboardCaptureAction.PopulateUi; Close(); }
+        else if (e.Key == Key.Enter && PopulateButton.IsEnabled) { Result = ClipboardCaptureAction.PopulateUi; Close(); }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

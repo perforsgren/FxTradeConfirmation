@@ -39,7 +39,8 @@ public class DateConvention
         _holidays = Holidays;
         _ccy = CCY;
 
-        if (CCY.Replace("/", "") == "USDCAD" || CCY == "USDTRY" || CCY == "USDPHP" || CCY == "USDRUB" || CCY == "USDKZT" || CCY == "USDPKR")
+        if (_ccy == "USDCAD" || _ccy == "USDTRY" || _ccy == "USDPHP" ||
+            _ccy == "USDRUB" || _ccy == "USDKZT" || _ccy == "USDPKR")
         {
             _tAdd = 1;
         }

@@ -48,15 +48,10 @@ public class TradeLeg
     public string BookCalypso { get; set; } = string.Empty;
 
     // Helper properties
-    public string BaseCurrency => CurrencyPair.Length >= 3 ? CurrencyPair[..3] : string.Empty;
-    public string QuoteCurrency
-    {
-        get
-        {
-            string normalized = CurrencyPair.Replace("/", string.Empty)
-                                            .Replace("-", string.Empty)
-                                            .Replace("_", string.Empty);
-            return normalized.Length >= 6 ? normalized[3..6] : string.Empty;
-        }
-    }
+    private string NormalizedPair => CurrencyPair.Replace("/", string.Empty)
+                                                  .Replace("-", string.Empty)
+                                                  .Replace("_", string.Empty);
+
+    public string BaseCurrency => NormalizedPair.Length >= 3 ? NormalizedPair[..3] : string.Empty;
+    public string QuoteCurrency => NormalizedPair.Length >= 6 ? NormalizedPair[3..6] : string.Empty;
 }
