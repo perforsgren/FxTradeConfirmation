@@ -1204,7 +1204,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
         CancelSolving();
 
         // ── Capture existing admin defaults before clearing ───────────────
-        // These come from SetupUserDefaults (DB lookup) and are not re-run here.
         var adminTrader = Legs.Count > 0 ? Legs[0].Trader : string.Empty;
         var adminSales = Legs.Count > 0 ? Legs[0].Sales : string.Empty;
         var adminReporting = Legs.Count > 0 ? Legs[0].ReportingEntity : string.Empty;
@@ -1214,16 +1213,44 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var adminBroker = Legs.Count > 0 ? Legs[0].Broker : string.Empty;
         var adminCalypso = Legs.Count > 0 ? Legs[0].BookCalypso : string.Empty;
 
+        // ── Resolve Sales + ReportingEntity from Bloomberg sender name ────
+        // Try the Bloomberg name from the clipboard header first.
+        // Fall back to current-user defaults (existing behaviour) when absent or not found.
+        var resolvedSales = adminSales;
+        var resolvedReporting = adminReporting;
+        var senderName = legs.FirstOrDefault()?.SenderName ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(senderName)
+            && ReferenceData.BloombergNameToSalesFullName.TryGetValue(senderName, out var mappedFullName))
+        {
+            resolvedSales = mappedFullName;
+
+            // Resolve the ReportingEntity that belongs to the Sales person, not the trader
+            if (ReferenceData.FullNameToUserId.TryGetValue(mappedFullName, out var salesUserId)
+                && ReferenceData.UserIdToReportingEntity.TryGetValue(salesUserId, out var salesReporting)
+                && !string.IsNullOrEmpty(salesReporting))
+            {
+                resolvedReporting = salesReporting;
+            }
+
+            Debug.WriteLine($"[PopulateLegsFromParsed] Bloomberg sender '{senderName}' → Sales '{mappedFullName}', ReportingEntity '{resolvedReporting}'.");
+        }
+        else if (!string.IsNullOrEmpty(senderName))
+        {
+            Debug.WriteLine($"[PopulateLegsFromParsed] Bloomberg sender '{senderName}' not found in BloombergNameToSalesFullName — keeping current defaults.");
+            _ = SetStatusAsync($"⚠ Sales name '{senderName}' not found in mapping table — please set Sales manually.");
+        }
+        // When senderName is empty the existing adminSales/adminReporting (from UserName fallback) are correct.
+
         Legs.Clear();
 
         foreach (var ovmlLeg in legs)
         {
             var vm = new TradeLegViewModel(this, Legs.Count + 1);
 
-            // Apply admin defaults to ALL legs (including Leg 1)
+            // Set InvestmentDecisionID first — its OnChanged handler will update
+            // Sales and ReportingEntity from the current-user mapping.
             vm.Trader = adminTrader;
-            vm.Sales = adminSales;
-            vm.ReportingEntity = adminReporting;
             vm.InvestmentDecisionID = adminDecisionId;
             vm.ExecutionTime = adminExecTime;
             vm.Mic = adminMic;
@@ -1231,6 +1258,12 @@ public partial class MainViewModel : ObservableObject, IDisposable
             vm.BookCalypso = adminCalypso;
 
             vm.ApplyFromOvmlLeg(ovmlLeg);
+
+            // Apply Sales and ReportingEntity last so the Bloomberg-resolved values
+            // win over whatever OnInvestmentDecisionIDChanged wrote above.
+            vm.Sales = resolvedSales;
+            vm.ReportingEntity = resolvedReporting;
+
             Legs.Add(vm);
         }
 

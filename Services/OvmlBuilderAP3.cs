@@ -21,6 +21,16 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
     private static readonly Regex RxDeltaStrike = new(@"^(\d+(?:\.\d+)?)[dD]$", RegexOptions.Compiled);
 
     /// <summary>
+    /// Matches the Bloomberg chat sender header: a line of ALL-CAPS words
+    /// (e.g. "MATZ ERIKSSON") that appears before the first timestamp line.
+    /// The name must consist solely of uppercase letters and spaces, be at
+    /// least two words, and occupy its own line.
+    /// </summary>
+    private static readonly Regex RxSenderName = new(
+        @"^\s*([A-ZÅÄÖÆØÜ][A-ZÅÄÖÆØÜ]+(?:\s+[A-ZÅÄÖÆØÜ][A-ZÅÄÖÆØÜ]+)+)\s*$",
+        RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>
     /// Known currency pairs loaded from reference data (e.g. "EURNOK", "USDSEK").
     /// Used as an allowlist so we never misidentify names or other words as a pair.
     /// </summary>
@@ -41,14 +51,19 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
         if (string.IsNullOrWhiteSpace(input))
             return false;
 
-        var cleaned = CleanInput(input);
-        var pair    = ExtractPair(cleaned);
-        var spot    = ExtractSpot(cleaned);
-        var expiry  = ExtractExpiryOrTenor(cleaned);
-        var legList = ExtractLegs(cleaned, pair, expiry, spot);
+        var senderName = ExtractSenderName(input);
+        var cleaned    = CleanInput(input);
+        var pair       = ExtractPair(cleaned);
+        var spot       = ExtractSpot(cleaned);
+        var expiry     = ExtractExpiryOrTenor(cleaned);
+        var legList    = ExtractLegs(cleaned, pair, expiry, spot);
 
         if (!IsFullyPopulated(pair, expiry, spot, legList))
             return false;
+
+        // Stamp the sender name on every leg so the caller can resolve Sales
+        if (!string.IsNullOrEmpty(senderName))
+            legList = legList.Select(l => l with { SenderName = senderName }).ToList();
 
         ovml = BuildOvml(pair, expiry, spot, legList);
         legs = legList;
@@ -73,6 +88,25 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Extracts the Bloomberg chat sender name from the raw clipboard text.
+    /// Bloomberg pastes typically start with the sender's full name in ALL CAPS
+    /// on its own line before the first timestamp, e.g.:
+    /// <code>
+    /// MATZ ERIKSSON
+    /// 15:04:24 eursek expiry …
+    /// </code>
+    /// Returns the matched name as pasted (upper-case), or an empty string when
+    /// the header is absent.
+    /// </summary>
+    private static string ExtractSenderName(string text)
+    {
+        // Only scan the first ~200 characters — the name always appears at the top
+        var head = text.Length > 200 ? text[..200] : text;
+        var m = RxSenderName.Match(head);
+        return m.Success ? m.Groups[1].Value.Trim() : string.Empty;
+    }
 
     private static string CleanInput(string text)
     {

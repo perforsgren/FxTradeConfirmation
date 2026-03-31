@@ -73,16 +73,17 @@ public class DatabaseService : IDatabaseService
             var reportingEntities  = await QueryListAsync("SELECT DISTINCT ReportingEntityId FROM userprofile WHERE ReportingEntityId IS NOT NULL AND IsActive = 1");
             var investmentDecIDs   = await QueryListAsync("SELECT DISTINCT UserId FROM userprofile WHERE UserId IS NOT NULL AND IsActive = 1 ORDER BY UserId");
 
-            var userIdToFullName        = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var userIdToReportingEntity = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var userIdToMx3Id           = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var fullNameToUserId        = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var userIdToFullName           = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var userIdToReportingEntity    = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var userIdToMx3Id              = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var fullNameToUserId           = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var bloombergNameToSalesFullName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             await using (var conn = new MySqlConnection(_connectionString))
             {
                 await conn.OpenAsync();
                 await using var profileCmd = new MySqlCommand(
-                    "SELECT UserId, FullName, ReportingEntityId, Mx3Id FROM userprofile WHERE IsActive = 1 AND UserId IS NOT NULL AND FullName IS NOT NULL", conn);
+                    "SELECT UserId, FullName, ReportingEntityId, Mx3Id, BloombergName FROM userprofile WHERE IsActive = 1 AND UserId IS NOT NULL AND FullName IS NOT NULL", conn);
                 await using var profileReader = await profileCmd.ExecuteReaderAsync();
                 while (await profileReader.ReadAsync())
                 {
@@ -90,11 +91,15 @@ public class DatabaseService : IDatabaseService
                     var fullName      = profileReader.GetString(1);
                     var reportingEnt  = profileReader.IsDBNull(2) ? string.Empty : profileReader.GetString(2);
                     var mx3Id         = profileReader.IsDBNull(3) ? string.Empty : profileReader.GetString(3);
+                    var bbName        = profileReader.IsDBNull(4) ? string.Empty : profileReader.GetString(4).Trim();
 
                     userIdToFullName.TryAdd(userId, fullName);
                     userIdToReportingEntity.TryAdd(userId, reportingEnt);
                     userIdToMx3Id.TryAdd(userId, mx3Id);
                     fullNameToUserId.TryAdd(fullName, userId);
+
+                    if (!string.IsNullOrEmpty(bbName))
+                        bloombergNameToSalesFullName.TryAdd(bbName, fullName);
                 }
             }
 
@@ -124,18 +129,19 @@ public class DatabaseService : IDatabaseService
 
             return new ReferenceData
             {
-                Counterparts            = counterparts,
-                CurrencyPairs           = currencyPairs,
-                EmailAddresses          = emailAddresses,
-                SalesNames              = salesNames,
-                ReportingEntities       = reportingEntities,
-                InvestmentDecisionIDs   = investmentDecIDs,
-                UserIdToFullName        = userIdToFullName,
-                UserIdToReportingEntity = userIdToReportingEntity,
-                UserIdToMx3Id           = userIdToMx3Id,
-                FullNameToUserId        = fullNameToUserId,
-                CurrencyToPortfolio     = currencyToPortfolio,
-                TraderIdToCalypsoBook   = traderIdToCalypsoBook,
+                Counterparts                 = counterparts,
+                CurrencyPairs                = currencyPairs,
+                EmailAddresses               = emailAddresses,
+                SalesNames                   = salesNames,
+                ReportingEntities            = reportingEntities,
+                InvestmentDecisionIDs        = investmentDecIDs,
+                UserIdToFullName             = userIdToFullName,
+                UserIdToReportingEntity      = userIdToReportingEntity,
+                UserIdToMx3Id                = userIdToMx3Id,
+                FullNameToUserId             = fullNameToUserId,
+                CurrencyToPortfolio          = currencyToPortfolio,
+                TraderIdToCalypsoBook        = traderIdToCalypsoBook,
+                BloombergNameToSalesFullName = bloombergNameToSalesFullName,
             };
         }
         catch (MySqlException ex)

@@ -60,4 +60,12 @@ public class ReferenceData
     /// </summary>
     public IReadOnlyDictionary<string, string> TraderIdToCalypsoBook { get; init; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// userprofile.BloombergName (UPPER) → userprofile.FullName.
+    /// Used to resolve the Bloomberg chat sender to the internal Sales display name.
+    /// Example: "MATZ ERIKSSON" → "Matz Eriksson"
+    /// </summary>
+    public IReadOnlyDictionary<string, string> BloombergNameToSalesFullName { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }

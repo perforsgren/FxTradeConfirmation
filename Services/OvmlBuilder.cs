@@ -96,6 +96,19 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
                 : string.Empty;
             var result = await GenerateAsync(input, prompt, ct);
             var success = !string.IsNullOrEmpty(result.Ovml) && result.Legs.Count > 0;
+
+            if (success)
+            {
+                // Stamp the sender name extracted from the raw clipboard text so the
+                // caller (MainViewModel) can resolve Sales via the Bloomberg name map.
+                var senderName = ExtractSenderName(input);
+                if (!string.IsNullOrEmpty(senderName))
+                {
+                    var stamped = result.Legs.Select(l => l with { SenderName = senderName }).ToList();
+                    return (true, result.Ovml, stamped);
+                }
+            }
+
             return (success, result.Ovml, result.Legs);
         }
         catch (OperationCanceledException)
@@ -528,6 +541,25 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
 
         throw new InvalidOperationException(
             "OpenAI API key not found. Set OPENAI_API_KEY environment variable or place Key.txt beside Prompt.txt.");
+    }
+
+    /// <summary>
+    /// Matches a Bloomberg chat sender header: a line of ALL-CAPS words on its
+    /// own line before the trade text (e.g. "MATZ ERIKSSON").
+    /// </summary>
+    private static readonly Regex RxSenderName = new(
+        @"^\s*([A-ZÅÄÖÆØÜ][A-ZÅÄÖÆØÜ]+(?:\s+[A-ZÅÄÖÆØÜ][A-ZÅÄÖÆØÜ]+)+)\s*$",
+        RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Extracts the Bloomberg sender name from the first ~200 characters of raw
+    /// clipboard text. Returns empty string when no header is found.
+    /// </summary>
+    private static string ExtractSenderName(string text)
+    {
+        var head = text.Length > 200 ? text[..200] : text;
+        var m = RxSenderName.Match(head);
+        return m.Success ? m.Groups[1].Value.Trim() : string.Empty;
     }
 
     private static string Safe(string? s) => s?.Trim() ?? string.Empty;

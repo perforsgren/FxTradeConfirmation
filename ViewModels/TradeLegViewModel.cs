@@ -947,6 +947,18 @@ public partial class TradeLegViewModel : ObservableObject
 
     private async Task LoadPortfolioAsync(string currencyPair)
     {
+        // ── Fast path: use the already-loaded in-memory lookup ───────────
+        // CurrencyToPortfolio is populated from the same DB table as the live
+        // query below; using it avoids a DB round-trip and any timing races.
+        var refData = _parent.ReferenceData;
+        if (refData.CurrencyToPortfolio.TryGetValue(currencyPair, out var cached) &&
+            !string.IsNullOrEmpty(cached))
+        {
+            PortfolioMX3 = cached;
+            return;
+        }
+
+        // ── Slow path: live DB query (e.g. pair added after startup) ─────
         var portfolio = await _parent.DatabaseService.GetPortfolioForCurrencyPairAsync(currencyPair);
         PortfolioMX3 = !string.IsNullOrEmpty(portfolio) ? portfolio : "MAJORS";
     }
@@ -1111,7 +1123,16 @@ public partial class TradeLegViewModel : ObservableObject
         // Currency pair
         if (!string.IsNullOrWhiteSpace(leg.Pair) &&
             !leg.Pair.Equals("UNKNOWN", StringComparison.OrdinalIgnoreCase))
-            CurrencyPair = leg.Pair.ToUpperInvariant();
+        {
+            var newPair = leg.Pair.ToUpperInvariant();
+            CurrencyPair = newPair;
+
+            // OnCurrencyPairChanged is skipped by CommunityToolkit when the value
+            // equals the current default ("EURSEK"). Force the portfolio lookup so
+            // PortfolioMX3 is always populated after a parse, regardless of whether
+            // the pair actually changed.
+            _ = LoadPortfolioAsync(newPair);
+        }
 
         // Buy / Sell — default to Buy if the parser returned null or empty
         BuySell = leg.BuySell?.StartsWith("S", StringComparison.OrdinalIgnoreCase) == true

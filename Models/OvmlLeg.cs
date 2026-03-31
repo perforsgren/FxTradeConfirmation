@@ -11,5 +11,6 @@ public sealed record OvmlLeg(
     string Strike,
     long Notional,
     string Expiry,
-    string Spot
+    string Spot,
+    string SenderName = ""
 );

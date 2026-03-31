@@ -1,25 +1,54 @@
 ﻿
 ---
 
-## 1. Match Sales Name in UI Against Bloomberg Name from Clipboard
+## 1. Match Sales Name in UI Against Bloomberg Name from Clipboard ✅
 
 **Goal:** When a Bloomberg chat message is parsed, automatically resolve the
 counterpart/sales person name from the raw Bloomberg chat handle or display name
 to the corresponding internal Sales name used in the UI dropdowns.
 
 **Tasks:**
-- [ ] Build or extend a mapping table (e.g. `BloombergNameToSalesMap`) that maps
-      Bloomberg login names / display names to `ReferenceData` Sales IDs.
-      Consider loading this from the database alongside other reference data in
-      `DatabaseService.LoadReferenceDataAsync()`.
-- [ ] In `OvmlBuilderAP3` / `OvmlBuilder`, extract the sender name from the
-      clipboard text header (e.g. `"From: John Doe (JDOE@Bloomberg)"`) and
-      expose it on `OvmlLeg` or as a top-level parse result.
-- [ ] In `MainViewModel.PopulateLegsFromParsed()`, after parsing, attempt to
-      resolve `OvmlLeg.SenderName` through the mapping table and pre-fill
-      `TradeLegViewModel.Sales` when a match is found.
-- [ ] If no match is found, leave `Sales` at its current default and optionally
-      surface a yellow warning in the status bar.
+- [x] Build or extend a mapping table (`BloombergNameToSalesFullName`) that maps
+      Bloomberg display names to `ReferenceData` Sales full names.
+      → Added `IReadOnlyDictionary<string, string> BloombergNameToSalesFullName`
+        to `ReferenceData`. Populated in `DatabaseService.LoadReferenceDataAsync()`
+        by extending the `userprofile` SELECT to include `BloombergName` and
+        mapping `BloombergName → FullName` (case-insensitive).
+- [x] In `OvmlBuilderAP3` / `OvmlBuilder`, extract the sender name from the
+      clipboard text header and expose it on `OvmlLeg.SenderName`.
+      → Added `SenderName = ""` optional parameter to the `OvmlLeg` record.
+        Both parsers share a `RxSenderName` regex that matches an ALL-CAPS
+        full name on its own line at the top of the clipboard text
+        (e.g. `"MATZ ERIKSSON"`). `OvmlBuilderAP3.TryParse` stamps the name on
+        all legs synchronously; `OvmlBuilder.TryParseAsync` stamps it after the
+        AI parse succeeds.
+- [x] In `MainViewModel.PopulateLegsFromParsed()`, resolve `OvmlLeg.SenderName`
+      through `BloombergNameToSalesFullName` and pre-fill `TradeLegViewModel.Sales`
+      and `TradeLegViewModel.ReportingEntity` when a match is found.
+      → `resolvedSales` and `resolvedReporting` are derived from the mapped
+        Sales user's profile (`FullNameToUserId` → `UserIdToReportingEntity`).
+        Both are applied **after** `vm.InvestmentDecisionID` and
+        `vm.ApplyFromOvmlLeg()` so they win over any value written by
+        `OnInvestmentDecisionIDChanged`.
+- [x] If no match is found, leave `Sales` at its current default and surface a
+      yellow warning in the status bar.
+      → When `SenderName` is non-empty but not found in the map,
+        `SetStatusAsync` emits `"⚠ Sales name '…' not found in mapping table
+        — please set Sales manually."` and the existing Windows-user default
+        is preserved unchanged.
+- [x] Fallback: when no sender name is present in the clipboard text, fall back
+      to existing `Environment.UserName`-based logic unchanged.
+
+**Bugs fixed during implementation:**
+- `OnInvestmentDecisionIDChanged` was overwriting `Sales` after it was set →
+  fixed by applying `Sales` and `ReportingEntity` last in `PopulateLegsFromParsed`.
+- `PortfolioMX3` was cleared when the parsed pair equalled the field default
+  (`"EURSEK"`) because CommunityToolkit's `SetProperty` skips unchanged values,
+  so `OnCurrencyPairChanged` never fired → fixed by calling `LoadPortfolioAsync`
+  unconditionally in `ApplyFromOvmlLeg` after assigning the pair.
+- `LoadPortfolioAsync` always did a live DB round-trip; replaced with a fast
+  synchronous lookup against `ReferenceData.CurrencyToPortfolio` with a DB
+  fallback for pairs added after startup.
 
 ---
 
