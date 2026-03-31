@@ -350,14 +350,15 @@ public partial class TradeGridControl : UserControl
                 var leg = models[i];
                 int legNum = i + 1;
 
-                // Option result
-                string optionLabel = $"Leg {legNum} Option — {leg.BuySell} {leg.CallPut} " +
+                // BuySell in TradeLeg is the CLIENT's perspective — invert for bank display.
+                BuySell bankOptionSide = leg.BuySell == BuySell.Buy ? BuySell.Sell : BuySell.Buy;
+                string optionLabel = $"Leg {legNum} Option — {bankOptionSide} {leg.CallPut} " +
                                      $"{leg.CurrencyPair} {FormatRate(leg.Strike, leg.CurrencyPair)} " +
                                      $"{leg.ExpiryDate:yyyy-MM-dd}";
                 optionItems.Add(SaveResultItem.FromResult(results[resultIndex], optionLabel, successBrush, failBrush));
                 resultIndex++;
 
-                // Hedge result (if present) — collect separately so all hedges appear after all options
+                // HedgeBuySell is also client perspective — invert for bank display.
                 bool hasHedge = leg.Hedge != Models.HedgeType.No
                     && leg.HedgeNotional.HasValue
                     && leg.HedgeRate.HasValue
@@ -365,8 +366,9 @@ public partial class TradeGridControl : UserControl
 
                 if (hasHedge)
                 {
+                    BuySell bankHedgeSide = leg.HedgeBuySell == BuySell.Buy ? BuySell.Sell : BuySell.Buy;
                     string hedgeLabel = $"Leg {legNum} Hedge — {leg.Hedge} " +
-                                        $"{leg.HedgeBuySell} {leg.CurrencyPair} @ {FormatRate(leg.HedgeRate, leg.CurrencyPair)}";
+                                        $"{bankHedgeSide} {leg.CurrencyPair} @ {FormatRate(leg.HedgeRate, leg.CurrencyPair)}";
                     hedgeItems.Add(SaveResultItem.FromResult(results[resultIndex], hedgeLabel, successBrush, failBrush));
                     resultIndex++;
                 }

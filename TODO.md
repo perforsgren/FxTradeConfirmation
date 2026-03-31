@@ -123,24 +123,31 @@ Bloomberg workflow is not interrupted.
 
 ---
 
-## 5. SaveResultDialog — Show Bank's Perspective, Not the Client's
+## 5. SaveResultDialog — Show Bank's Perspective, Not the Client's ✅
 
-**Goal:** In `SaveResultDialog`, all premium / trade direction labels should be
+**Goal:** In `SaveResultDialog`, all trade direction labels should be
 expressed from the bank's (our) perspective, not the client's.
 
 **Tasks:**
-- [ ] Audit the `SaveResultItem` construction in `MainViewModel.SaveAsync()` and
+- [x] Audit the `SaveResultItem` construction in `MainViewModel.SaveAsync()` and
       `TradeSubmitResult` to identify where "Client pays / receives" language
       originates.
-- [ ] Introduce a helper or convention, e.g. `BankPerspectiveLabel(BuySell buySell,
-      decimal premiumAmount)`, that maps:
-      - Client BUY → Bank SELL → "We sell {CallPut} — We receive {premium}"
-      - Client SELL → Bank BUY → "We buy {CallPut} — We pay {premium}"
-- [ ] Update `SaveResultDialog.xaml` detail rows to use the new bank-perspective
-      labels.
+      → Both `BuySell` and `HedgeBuySell` on `TradeLeg` are confirmed client-side
+        (same inversion already applied in `TradeIngestService` before STP submission).
+- [x] Invert `BuySell` and `HedgeBuySell` in `OnSaveResultDialogRequested`
+      (`TradeGridControl.xaml.cs`) when building `optionLabel` and `hedgeLabel`,
+      so the dialog reflects the bank's direction for both options and hedges.
+      → `BankPerspectiveLabel` approach was dropped in favour of a direct inline
+        inversion — simpler, no new helper needed.
+- [x] Update `SaveResultDialog.xaml` to clearly indicate the perspective.
+      → Added a discrete blue badge — `"🏦 Directions shown from Bank's perspective"`
+        — above the results list using `AccentBlueMutedBrush` / `AccentBlueBrush`
+        from the existing theme. Badge is separate from the leg rows.
 - [ ] Also update `TotalPremiumDisplay` in `MainViewModel.UpdateTotalPremium()`
       if it is displayed anywhere in the results dialog — change "Client receives"
       / "Client pays" to "Bank pays" / "Bank receives".
+      → Deferred: `TotalPremiumDisplay` is shown in the main grid distributor
+        column, not in `SaveResultDialog`. Revisit if it is ever surfaced there.
 
 ---
 
