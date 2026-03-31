@@ -148,6 +148,7 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
         if (p1 is null) { LastPassesUsed = 1; return ParseResult.Empty; }
 
         NormalizePair(p1);
+        RollExpiryIfPast(p1);
         ApplyAtmFromSpot(p1, input);
         InferPutCall(p1);
 
@@ -173,6 +174,7 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
         if (p2 is null) { LastPassesUsed = 2; return Finish(p1); }
 
         NormalizePair(p2);
+        RollExpiryIfPast(p2);
         ApplyAtmFromSpot(p2, input);
         InferPutCall(p2);
 
@@ -227,6 +229,36 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
     private static void NormalizePair(ParsedOutput po)
     {
         if (!IsValidPair(po.Pair)) po.Pair = "UNKNOWN";
+    }
+
+    /// <summary>
+    /// If the AI returned an expiry date that is already in the past, roll it
+    /// forward by one year. Bloomberg messages often omit the year, so the model
+    /// may resolve an unambiguous-looking date (e.g. "15 Mar") to the current
+    /// calendar year even though the trade is for next year.
+    /// Only acts on yyyy-MM-dd strings — tenors are already future-relative.
+    /// </summary>
+    private static void RollExpiryIfPast(ParsedOutput po)
+    {
+        po.Expiry = RollDateStringIfPast(Safe(po.Expiry));
+
+        if (po.Expiries is not null)
+            for (int i = 0; i < po.Expiries.Count; i++)
+                po.Expiries[i] = RollDateStringIfPast(Safe(po.Expiries[i]));
+    }
+
+    private static string RollDateStringIfPast(string expiry)
+    {
+        if (string.IsNullOrWhiteSpace(expiry)) return expiry;
+
+        if (!DateTime.TryParseExact(expiry, "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+            return expiry; // not an ISO date (e.g. a tenor like "3M") — leave untouched
+
+        if (dt < DateTime.Today)
+            return dt.AddYears(1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+        return expiry;
     }
 
     private static bool NeedsSecondPass(ParsedOutput po)

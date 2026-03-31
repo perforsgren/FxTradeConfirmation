@@ -138,11 +138,19 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
         {
             int day   = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
             string mn = m.Groups[2].Value;
-            int year  = m.Groups[3].Success ? int.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture) : DateTime.Now.Year;
+            bool yearExplicit = m.Groups[3].Success;
+            int year  = yearExplicit ? int.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture) : DateTime.Today.Year;
 
             if (DateTime.TryParseExact($"{day} {mn} {year}", "d MMM yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt) ||
                 DateTime.TryParse($"{day} {mn} {year}", out dt))
+            {
+                // If no year was specified and the resolved date is already in the past,
+                // roll forward one year — Bloomberg messages often omit the year.
+                if (!yearExplicit && dt < DateTime.Today)
+                    dt = dt.AddYears(1);
+
                 return dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            }
         }
 
         var t = RxTenor.Match(text);

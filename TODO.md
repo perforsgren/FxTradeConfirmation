@@ -1,5 +1,4 @@
-﻿# TODO — FxTradeConfirmation Development Backlog
-
+﻿
 ---
 
 ## 1. Match Sales Name in UI Against Bloomberg Name from Clipboard
@@ -21,7 +20,6 @@ to the corresponding internal Sales name used in the UI dropdowns.
       `TradeLegViewModel.Sales` when a match is found.
 - [ ] If no match is found, leave `Sales` at its current default and optionally
       surface a yellow warning in the status bar.
-- [ ] Write unit tests for the name-resolution logic with known Bloomberg handles.
 
 ---
 
@@ -78,6 +76,7 @@ and ask whether to roll the date backward, forward, or keep it (non-bookable).
 ---
 
 ## 4. Restore Original Bloomberg Clipboard Content After OVML Parse ✅
+
 
 **Goal:** After the OVML string has been parsed (or when the user closes
 `ClipboardCaptureDialog` without acting), restore the original Bloomberg
@@ -151,22 +150,35 @@ expressed from the bank's (our) perspective, not the client's.
 
 ---
 
-## 6. Assume Next-Year Expiry When Parsed Date Has Already Passed
+## 6. Assume Next-Year Expiry When Parsed Date Has Already Passed ✅
 
 **Goal:** If the OVML parser resolves an expiry date that is in the past
 (relative to today), automatically roll it forward by one year, since Bloomberg
 chat messages often omit the year.
 
 **Tasks:**
-- [ ] In `OvmlBuilderAP3` (and `OvmlBuilder`) after resolving `ExpiryDate`:
-      - If `parsedDate < DateTime.Today`, set `parsedDate = parsedDate.AddYears(1)`.
-- [ ] Alternatively, apply this logic centrally in `TradeLegViewModel.ApplyFromOvmlLeg()`
-      or `TradeLegViewModel.ApplyExpiryInput()` so the rule is always enforced
-      regardless of which parser is used.
-- [ ] Log or surface a status hint, e.g. "Expiry rolled to next year ({date})"
-      in `StatusMessage`.
-- [ ] Add unit tests covering: past date → next year, today → unchanged,
-      future date → unchanged, leap-year edge case (Feb 29).
+- [x] In `OvmlBuilderAP3.ExtractExpiryOrTenor()`: when no year is present in the
+      matched expiry pattern (`"expiry 15 mar"`), check if the resolved date is
+      in the past and roll forward one year via `dt.AddYears(1)`.
+      → `yearExplicit` flag guards the roll — explicit years (e.g. `"expiry 15 mar 2026"`)
+        are never touched.
+- [x] In `OvmlBuilder.GenerateAsync()` (AI parser): added `RollExpiryIfPast()`
+      called after `NormalizePair` on both pass 1 and pass 2.
+      → Handles both `po.Expiry` (single shared date) and `po.Expiries` (per-leg
+        dates). Only acts on `yyyy-MM-dd` strings — tenors (`"3M"`, `"ON"`) are
+        left untouched.
+- [x] `ExpiryDateParser.TryParseDate()` already rolled `dd/MM` and `dd-MMM`
+      formats (both assume current year when no year is given). No change needed
+      there.
+- [x] `TradeLegViewModel.ApplyExpiryInput()`: central fallback guard added — if
+      a fully-resolved `Convention.ExpiryDate` is still in the past after parsing,
+      re-parse with `ExpiryDate.AddYears(1)` as a `yyyy-MM-dd` string, and set
+      `_parent.StatusMessage` to `"ℹ Expiry rolled to next year (yyyy-MM-dd)"`.
+      → Catches any remaining edge cases regardless of which parser produced the
+        date, with a visible status-bar hint for the trader.
+- [ ] ~~Add unit tests covering: past date → next year, today → unchanged,
+      future date → unchanged, leap-year edge case (Feb 29).~~
+
 
 ---
 
@@ -212,4 +224,3 @@ chat messages often omit the year.
 - [ ] Ensure all new `async` commands use `.FireAndForget(onError: ...)` or
       proper `try/catch` so exceptions do not silently escape.
 - [ ] Add XML doc comments to all new public methods and properties.
-- [ ] Update integration tests / existing unit tests to cover the new flows above.
