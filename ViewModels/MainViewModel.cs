@@ -36,6 +36,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     private int _clipboardFlowActive;
 
+    /// <summary>
+    /// Snapshot of the clipboard text captured immediately before a parse cycle
+    /// begins. Restored when the dialog closes (all results) and after
+    /// <see cref="SendToBloombergAsync"/> completes.
+    /// Null when no snapshot has been taken for the current cycle.
+    /// </summary>
+    private string? _clipboardSnapshot;
+
     public MainViewModel(
         IDatabaseService databaseService,
         IEmailService emailService,
@@ -223,6 +231,26 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 .Task
                 ?? Task.CompletedTask);
 
+            // Snapshot whatever was on the clipboard BEFORE this Bloomberg chat
+            // text arrived. At this point the clipboard already contains e.Text,
+            // so if they match there is nothing useful to restore — set null to
+            // suppress the restore entirely and avoid writing the chat text back
+            // into Bloomberg Terminal during the paste flow.
+            await (Application.Current?.Dispatcher
+                .InvokeAsync(() =>
+                {
+                    try
+                    {
+                        var current = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+                        _clipboardSnapshot = string.Equals(current, e.Text, StringComparison.Ordinal)
+                            ? null
+                            : current;
+                    }
+                    catch { _clipboardSnapshot = null; }
+                })
+                .Task
+                ?? Task.CompletedTask);
+
             await SetStatusAsync("⏳ Parsing…");
 
             // Snapshot the parser reference once — _regexParser may be replaced on the
@@ -278,6 +306,47 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return dispatcher.InvokeAsync(() => StatusMessage = message).Task;
     }
 
+    /// <summary>
+    /// Restores the Bloomberg clipboard snapshot taken at the start of the
+    /// current parse cycle. Safe to call from any thread; always runs on the
+    /// UI thread. If the snapshot is null or empty, this is a no-op.
+    /// </summary>
+    /// <param name="delayMs">
+    /// Extra settling delay before writing to the clipboard. Use a non-zero
+    /// value after a Bloomberg paste so that Bloomberg's Ctrl+V keystroke has
+    /// time to be consumed from its message queue before we overwrite the
+    /// clipboard with the original text.
+    /// </param>
+    public async Task RestoreClipboardAsync(int delayMs = 0)
+    {
+        var snapshot = _clipboardSnapshot;
+        if (string.IsNullOrEmpty(snapshot))
+            return;
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null)
+            return;
+
+        if (delayMs > 0)
+            await Task.Delay(delayMs);
+
+        await dispatcher.InvokeAsync(() =>
+        {
+            _suppressClipboardEvents = true;
+            try { Clipboard.SetText(snapshot); }
+            catch { /* clipboard locked by another process — skip silently */ }
+        }).Task;
+
+        // Clear the suppress flag after the WM_CLIPBOARDUPDATE message has been
+        // dispatched, then reset the dedup signature so the next copy of the same
+        // original text is not silently dropped by the watcher.
+        await dispatcher.InvokeAsync(() =>
+        {
+            _suppressClipboardEvents = false;
+            ClipboardWatcher?.ResetLastSignature();
+        }).Task;
+    }
+
     // --- Bloomberg Paster ---
 
     /// <summary>
@@ -319,14 +388,19 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            // Ensure the flag is cleared on the UI thread — the same thread
-            // that reads it in OnClipboardChanged (via WndProc / WM_CLIPBOARDUPDATE).
-            // InvokeAsync (non-blocking) eliminates the deadlock risk that
-            // synchronous Invoke would cause if the UI thread is waiting on this task.
+            // Ensure the suppress flag is cleared on the UI thread before the
+            // restore — RestoreClipboardAsync will temporarily re-set it around
+            // its own Clipboard.SetText call.
             await (Application.Current?.Dispatcher
                 .InvokeAsync(() => _suppressClipboardEvents = false)
                 .Task
                 ?? Task.CompletedTask);
+
+            // Wait long enough for Bloomberg to read the OVML text from the
+            // clipboard before we overwrite it with the original content.
+            // Bloomberg processes Ctrl+V from its own message queue; 1000 ms is
+            // well beyond the AfterPasteDelayMs (150) + Enter already sent.
+            await RestoreClipboardAsync(delayMs: 1000);
         }
     }
 

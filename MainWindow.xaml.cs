@@ -139,20 +139,26 @@ public partial class MainWindow : Window
                     case ClipboardCaptureAction.PopulateUi:
                         vm.PopulateLegsFromParsed(finalLegs);
                         vm.StatusMessage = $"✓ Form filled — {finalLegs.Count} leg(s) via {(parsedByAi ? "AI" : "regex")}";
+                        // Restore original clipboard — OVML was never pasted to Bloomberg
+                        _ = vm.RestoreClipboardAsync();
                         break;
 
                     case ClipboardCaptureAction.OpenInBloomberg:
+                        // RestoreClipboardAsync is called inside SendToBloombergAsync's finally block
                         _ = vm.SendToBloombergAsync(finalOvml);
                         break;
 
                     case ClipboardCaptureAction.Both:
                         vm.PopulateLegsFromParsed(finalLegs);
+                        // RestoreClipboardAsync is called inside SendToBloombergAsync's finally block
                         _ = vm.SendToBloombergAsync(finalOvml);
                         vm.StatusMessage = $"✓ Form filled + sent to Bloomberg — {finalLegs.Count} leg(s)";
                         break;
 
                     case ClipboardCaptureAction.Reject:
                         vm.StatusMessage = "Option request rejected.";
+                        // Restore original clipboard — user dismissed without acting
+                        _ = vm.RestoreClipboardAsync();
                         break;
                 }
 
