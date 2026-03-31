@@ -1128,25 +1128,33 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void PopulateLegsFromParsed(IReadOnlyList<OvmlLeg> legs)
     {
         CancelSolving();
+
+        // ── Capture existing admin defaults before clearing ───────────────
+        // These come from SetupUserDefaults (DB lookup) and are not re-run here.
+        var adminTrader = Legs.Count > 0 ? Legs[0].Trader : string.Empty;
+        var adminSales = Legs.Count > 0 ? Legs[0].Sales : string.Empty;
+        var adminReporting = Legs.Count > 0 ? Legs[0].ReportingEntity : string.Empty;
+        var adminDecisionId = Legs.Count > 0 ? Legs[0].InvestmentDecisionID : string.Empty;
+        var adminExecTime = Legs.Count > 0 ? Legs[0].ExecutionTime : string.Empty;
+        var adminMic = Legs.Count > 0 ? Legs[0].Mic : string.Empty;
+        var adminBroker = Legs.Count > 0 ? Legs[0].Broker : string.Empty;
+        var adminCalypso = Legs.Count > 0 ? Legs[0].BookCalypso : string.Empty;
+
         Legs.Clear();
 
         foreach (var ovmlLeg in legs)
         {
             var vm = new TradeLegViewModel(this, Legs.Count + 1);
 
-            // Inherit admin defaults from Leg 1 when adding subsequent legs
-            if (Legs.Count > 0)
-            {
-                var leg1 = Legs[0];
-                vm.Trader = leg1.Trader;
-                vm.Sales = leg1.Sales;
-                vm.ReportingEntity = leg1.ReportingEntity;
-                vm.InvestmentDecisionID = leg1.InvestmentDecisionID;
-                vm.ExecutionTime = leg1.ExecutionTime;
-                vm.Mic = leg1.Mic;
-                vm.Broker = leg1.Broker;
-                vm.BookCalypso = leg1.BookCalypso;
-            }
+            // Apply admin defaults to ALL legs (including Leg 1)
+            vm.Trader = adminTrader;
+            vm.Sales = adminSales;
+            vm.ReportingEntity = adminReporting;
+            vm.InvestmentDecisionID = adminDecisionId;
+            vm.ExecutionTime = adminExecTime;
+            vm.Mic = adminMic;
+            vm.Broker = adminBroker;
+            vm.BookCalypso = adminCalypso;
 
             vm.ApplyFromOvmlLeg(ovmlLeg);
             Legs.Add(vm);
