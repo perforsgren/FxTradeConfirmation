@@ -1,5 +1,6 @@
-﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
         x:Class="FxTradeConfirmation.Views.ClipboardCaptureDialog"
         Title="Option Request Captured" Width="560" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
@@ -13,8 +14,8 @@
 
             <!-- ── Dark context menu ── -->
             <Style x:Key="DarkContextMenu" TargetType="ContextMenu">
-                <Setter Property="Background" Value="#FF1A2138"/>
-                <Setter Property="BorderBrush" Value="#FF2D3654"/>
+                <Setter Property="Background" Value="{StaticResource BgMediumBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderDefaultBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
                 <Setter Property="Padding" Value="3"/>
                 <Setter Property="HasDropShadow" Value="True"/>
@@ -36,8 +37,8 @@
             <!-- ── Dark menu item ── -->
             <Style x:Key="DarkMenuItem" TargetType="MenuItem">
                 <Setter Property="Background" Value="Transparent"/>
-                <Setter Property="Foreground" Value="#FFE2E8F0"/>
-                <Setter Property="FontFamily" Value="Segoe UI"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
                 <Setter Property="FontSize" Value="12"/>
                 <Setter Property="Padding" Value="10,6"/>
                 <Setter Property="Template">
@@ -55,10 +56,10 @@
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsHighlighted" Value="True">
-                                    <Setter TargetName="bg" Property="Background" Value="#FF252D4A"/>
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
                                 </Trigger>
                                 <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="bg" Property="Background" Value="#FF2563EB"/>
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource AccentBlueDarkBrush}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -68,7 +69,7 @@
 
             <!-- ══ Calendar day button — dark themed ══════════════════════ -->
             <Style x:Key="CalDayButton" TargetType="CalendarDayButton">
-                <Setter Property="Foreground" Value="#FFE7EEFC"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                 <Setter Property="FontSize"   Value="11"/>
                 <Setter Property="MinWidth"   Value="28"/>
                 <Setter Property="MinHeight"  Value="28"/>
@@ -86,22 +87,22 @@
                             </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="#1A3B82F6"/>
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
                                 </Trigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="#333B82F6"/>
-                                    <Setter Property="Foreground" Value="#FF3B82F6"/>
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBlueBrush}"/>
                                     <Setter Property="FontWeight" Value="SemiBold"/>
                                 </Trigger>
                                 <Trigger Property="IsToday" Value="True">
-                                    <Setter TargetName="Bg" Property="BorderBrush"     Value="#FF3B82F6"/>
+                                    <Setter TargetName="Bg" Property="BorderBrush"     Value="{StaticResource AccentBlueBrush}"/>
                                     <Setter TargetName="Bg" Property="BorderThickness" Value="1"/>
                                 </Trigger>
                                 <Trigger Property="IsBlackedOut" Value="True">
-                                    <Setter Property="Foreground" Value="#FF475569"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextDimmedBrush}"/>
                                 </Trigger>
                                 <Trigger Property="IsInactive" Value="True">
-                                    <Setter Property="Foreground" Value="#FF475569"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextDimmedBrush}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -111,7 +112,7 @@
 
             <!-- ══ Calendar month/year button ════════════════════════════ -->
             <Style x:Key="CalMonthButton" TargetType="CalendarButton">
-                <Setter Property="Foreground" Value="#FFE7EEFC"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                 <Setter Property="FontSize"   Value="11"/>
                 <Setter Property="MinWidth"   Value="40"/>
                 <Setter Property="MinHeight"  Value="28"/>
@@ -128,11 +129,65 @@
                             </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="#1A3B82F6"/>
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
                                 </Trigger>
                                 <Trigger Property="HasSelectedDays" Value="True">
-                                    <Setter TargetName="Bg" Property="Background" Value="#333B82F6"/>
-                                    <Setter Property="Foreground" Value="#FF3B82F6"/>
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBlueBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ══ CalendarItem — hides built-in header row ═════════════ -->
+            <Style x:Key="CalItemHiddenHeader" TargetType="primitives:CalendarItem">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="primitives:CalendarItem">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <!-- PART_ buttons must exist but are hidden -->
+                                <Grid Grid.Row="0" Visibility="Collapsed">
+                                    <Button x:Name="PART_PreviousButton"/>
+                                    <Button x:Name="PART_HeaderButton"/>
+                                    <Button x:Name="PART_NextButton"/>
+                                </Grid>
+                                <Grid Grid.Row="1" Margin="2">
+                                    <Grid x:Name="PART_MonthView" HorizontalAlignment="Center"/>
+                                    <Grid x:Name="PART_YearView" HorizontalAlignment="Center" Visibility="Collapsed"/>
+                                </Grid>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ══ Nav button — removes default WPF chrome ══════════════ -->
+            <Style x:Key="CalNavButton" TargetType="Button">
+                <Setter Property="Width" Value="28"/>
+                <Setter Property="Height" Value="28"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="4">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -143,7 +198,7 @@
             <!-- ══ DayTitle data template (weekday header row) ═══════════ -->
             <DataTemplate x:Key="CalDayTitleTemplate">
                 <TextBlock Text="{Binding}"
-                           Foreground="#FF94A3B8"
+                           Foreground="{StaticResource TextMutedBrush}"
                            FontSize="10"
                            FontWeight="SemiBold"
                            HorizontalAlignment="Center"

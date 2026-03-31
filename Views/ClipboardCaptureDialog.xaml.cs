@@ -1,4 +1,4 @@
-﻿using FxTradeConfirmation.Models;
+using FxTradeConfirmation.Models;
 using FxTradeConfirmation.Services;
 using System.ComponentModel;
 using System.Globalization;
@@ -95,9 +95,8 @@ public partial class ClipboardCaptureDialog : Window
     // ── Picker factory ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Creates a Calendar whose day/month-button styles and DayTitle template
-    /// are loaded from the XAML Border.Resources (CalDayButton, CalMonthButton,
-    /// CalDayTitleTemplate). This avoids FrameworkElementFactory name-scope bugs.
+    /// Creates a Calendar whose day/month-button styles, CalendarItem template,
+    /// and DayTitle template are loaded from the XAML Border.Resources.
     /// </summary>
     private WpfCalendar CreateCalendar(DateTime? selected)
     {
@@ -109,13 +108,14 @@ public partial class ClipboardCaptureDialog : Window
             Language        = System.Windows.Markup.XmlLanguage.GetLanguage("en-US"),
             Background      = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            Foreground      = new SolidColorBrush(Color.FromRgb(0xE7, 0xEE, 0xFC)),
+            Foreground      = (Brush)Application.Current.Resources["TextPrimaryBrush"],
             Margin          = new Thickness(0),
         };
 
         // Styles defined in XAML Border.Resources — resolved via the live element tree
         cal.CalendarDayButtonStyle = (Style)ExpiryStack.FindResource("CalDayButton");
         cal.CalendarButtonStyle    = (Style)ExpiryStack.FindResource("CalMonthButton");
+        cal.CalendarItemStyle      = (Style)ExpiryStack.FindResource("CalItemHiddenHeader");
 
         // DayTitle template — weekday header row (M T W T F S S)
         var dayTitleTemplate = (DataTemplate)ExpiryStack.FindResource("CalDayTitleTemplate");
@@ -134,7 +134,7 @@ public partial class ClipboardCaptureDialog : Window
         var monthLabel = new TextBlock
         {
             Text                = cal.DisplayDate.ToString("MMM yyyy", CultureInfo.InvariantCulture),
-            Foreground          = new SolidColorBrush(Color.FromRgb(0xE7, 0xEE, 0xFC)),
+            Foreground          = (Brush)Application.Current.Resources["TextPrimaryBrush"],
             FontSize            = 12,
             FontWeight          = FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -144,13 +144,16 @@ public partial class ClipboardCaptureDialog : Window
         cal.DisplayDateChanged += (_, _) =>
             monthLabel.Text = cal.DisplayDate.ToString("MMM yyyy", CultureInfo.InvariantCulture);
 
+        // ── Nav button style (from XAML resources, removes default chrome) ─
+        var navStyle = (Style)target.FindResource("CalNavButton");
+
         // ── Nav button factory ────────────────────────────────────────────
-        static Button MakeNavButton(string pathData, string tooltip)
+        Button MakeNavButton(string pathData, string tooltip)
         {
             var icon = new Path
             {
                 Data               = Geometry.Parse(pathData),
-                Stroke             = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                Stroke             = (Brush)Application.Current.Resources["TextMutedBrush"],
                 StrokeThickness    = 1.8,
                 StrokeLineJoin     = PenLineJoin.Round,
                 StrokeStartLineCap = PenLineCap.Round,
@@ -164,15 +167,9 @@ public partial class ClipboardCaptureDialog : Window
 
             return new Button
             {
-                Width     = 28,
-                Height    = 28,
-                Cursor    = Cursors.Hand,
-                Focusable = false,
-                Content   = icon,
-                ToolTip   = tooltip,
-                Background      = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding         = new Thickness(0),
+                Content = icon,
+                ToolTip = tooltip,
+                Style   = navStyle,
             };
         }
 
@@ -218,8 +215,8 @@ public partial class ClipboardCaptureDialog : Window
         // ── Card ──────────────────────────────────────────────────────────
         var card = new System.Windows.Controls.Border
         {
-            Background      = new SolidColorBrush(Color.FromRgb(0x1E, 0x29, 0x3B)),
-            BorderBrush     = new SolidColorBrush(Color.FromRgb(0x33, 0x41, 0x55)),
+            Background      = (Brush)Application.Current.Resources["BgCardBrush"],
+            BorderBrush     = (Brush)Application.Current.Resources["BorderDefaultBrush"],
             BorderThickness = new Thickness(1),
             CornerRadius    = new CornerRadius(6),
             Padding         = new Thickness(4),
