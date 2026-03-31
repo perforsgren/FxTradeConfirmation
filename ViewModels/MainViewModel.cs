@@ -1237,8 +1237,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         else if (!string.IsNullOrEmpty(senderName))
         {
-            Debug.WriteLine($"[PopulateLegsFromParsed] Bloomberg sender '{senderName}' not found in BloombergNameToSalesFullName — keeping current defaults.");
-            _ = SetStatusAsync($"⚠ Sales name '{senderName}' not found in mapping table — please set Sales manually.");
+            //Debug.WriteLine($"[PopulateLegsFromParsed] Bloomberg sender '{senderName}' not found in BloombergNameToSalesFullName — keeping current defaults.");
+            //_ = SetStatusAsync($"⚠ Sales name '{senderName}' not found in mapping table — please set Sales manually.");
         }
         // When senderName is empty the existing adminSales/adminReporting (from UserName fallback) are correct.
 
