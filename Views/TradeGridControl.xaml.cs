@@ -1,4 +1,7 @@
-﻿using System.Collections.Specialized;
+﻿using FxTradeConfirmation.Models;
+using FxTradeConfirmation.Services;
+using FxTradeConfirmation.ViewModels;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
@@ -7,8 +10,6 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using FxTradeConfirmation.Models;
-using FxTradeConfirmation.ViewModels;
 
 namespace FxTradeConfirmation.Views;
 
@@ -49,10 +50,10 @@ public partial class TradeGridControl : UserControl
     private const int RowHedgeNotionalCcy = 32;
     private const int RowHedgeRate = 33;
     private const int RowHedgeSettlement = 34;
-    private const int RowHedgeTvtic = 35;
-    private const int RowHedgeUti = 36;
-    private const int RowHedgeIsin = 37;
-    private const int RowBookCalypso = 38;
+    private const int RowBookCalypso = 35;
+    private const int RowHedgeTvtic = 36;
+    private const int RowHedgeUti = 37;
+    private const int RowHedgeIsin = 38;
     private const int TotalRows = 39;
 
     private static readonly int[] HedgeDetailRows =
@@ -118,19 +119,17 @@ public partial class TradeGridControl : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
 
-        EventManager.RegisterClassHandler(typeof(TextBox), GotKeyboardFocusEvent,
-            new KeyboardFocusChangedEventHandler(OnTextBoxGotKeyboardFocus));
-        EventManager.RegisterClassHandler(typeof(TextBox), PreviewMouseLeftButtonDownEvent,
-            new MouseButtonEventHandler(OnTextBoxPreviewMouseLeftButtonDown));
-
+        PreviewGotKeyboardFocus += OnPreviewGotKeyboardFocus;
+        PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
         PreviewKeyDown += OnGridPreviewKeyDown;
     }
 
     private void OnGridPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Tab) return;
+        if (e.Key != Key.Tab && e.Key != Key.Enter) return;
 
-        bool forward = !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        // Enter always moves forward; Tab respects Shift modifier
+        bool forward = e.Key == Key.Enter || !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
         var focused = Keyboard.FocusedElement as DependencyObject;
 
         // Resolve the registered UIElement that currently holds focus
@@ -189,6 +188,21 @@ public partial class TradeGridControl : UserControl
             e.Handled = true; // all non-tabbable — swallow anyway
     }
 
+    private static void OnPreviewGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (e.OriginalSource is TextBox tb && !tb.IsReadOnly)
+            tb.SelectAll();
+    }
+
+    private static void OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source) return;
+        var tb = FindParent<TextBox>(source);
+        if (tb == null || tb.IsReadOnly || tb.IsKeyboardFocusWithin) return;
+        tb.Focus();
+        e.Handled = true;
+    }
+
     /// <summary>
     /// Searches _tabOrder starting after <paramref name="startIndex"/> in the given
     /// direction and focuses the first tabbable candidate. Returns true on success.
@@ -235,21 +249,6 @@ public partial class TradeGridControl : UserControl
         Keyboard.Focus(element);
     }
 
-    private static void OnTextBoxGotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
-    {
-        if (e.OriginalSource is TextBox tb && !tb.IsReadOnly)
-            tb.SelectAll();
-    }
-
-    private static void OnTextBoxPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.OriginalSource is not DependencyObject source) return;
-        var tb = FindParent<TextBox>(source);
-        if (tb == null || tb.IsReadOnly || tb.IsKeyboardFocusWithin) return;
-        tb.Focus();
-        e.Handled = true;
-    }
-
     private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
     {
         var current = child;
@@ -272,6 +271,8 @@ public partial class TradeGridControl : UserControl
             oldVm.Legs.CollectionChanged -= OnLegsChanged;
             oldVm.DistributorClearRequested -= OnDistributorClearRequested;
             oldVm.SolvingDialogRequested -= OnSolvingDialogRequested;
+            oldVm.SaveResultDialogRequested -= OnSaveResultDialogRequested;
+            oldVm.OpenRecentDialogRequested -= OnOpenRecentDialogRequested;
             oldVm.PropertyChanged -= OnVmPropertyChanged;
             foreach (var leg in oldVm.Legs)
                 leg.PropertyChanged -= OnLegPropertyChanged;
@@ -283,6 +284,8 @@ public partial class TradeGridControl : UserControl
             _vm.Legs.CollectionChanged += OnLegsChanged;
             _vm.DistributorClearRequested += OnDistributorClearRequested;
             _vm.SolvingDialogRequested += OnSolvingDialogRequested;
+            _vm.SaveResultDialogRequested += OnSaveResultDialogRequested;
+            _vm.OpenRecentDialogRequested += OnOpenRecentDialogRequested;
             _vm.PropertyChanged += OnVmPropertyChanged;
             foreach (var leg in _vm.Legs)
                 leg.PropertyChanged += OnLegPropertyChanged;
@@ -295,13 +298,25 @@ public partial class TradeGridControl : UserControl
         switch (fieldName)
         {
             case nameof(TradeLegViewModel.Counterpart):
-                if (_distCounterpart != null) _distCounterpart.SelectedIndex = -1;
+                if (_distCounterpart != null)
+                {
+                    _distCounterpart.SelectedIndex = -1;
+                    _distCounterpart.Text = string.Empty;
+                }
                 break;
             case nameof(TradeLegViewModel.CurrencyPair):
-                if (_distCcyPair != null) _distCcyPair.SelectedIndex = -1;
+                if (_distCcyPair != null)
+                {
+                    _distCcyPair.SelectedIndex = -1;
+                    _distCcyPair.Text = string.Empty;
+                }
                 break;
             case nameof(TradeLegViewModel.Cut):
-                if (_distCut != null) _distCut.SelectedIndex = -1;
+                if (_distCut != null)
+                {
+                    _distCut.SelectedIndex = -1;
+                    _distCut.Text = string.Empty;
+                }
                 break;
         }
     }
@@ -325,6 +340,96 @@ public partial class TradeGridControl : UserControl
         }, System.Windows.Threading.DispatcherPriority.Input);
     }
 
+    private void OnSaveResultDialogRequested(
+    IReadOnlyList<TradeSubmitResult> results,
+    IReadOnlyList<TradeLeg> models,
+    int successCount,
+    int failCount)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var successBrush = (System.Windows.Media.Brush)FindResource("PositiveGreenBrush");
+            var failBrush = (System.Windows.Media.Brush)FindResource("NegativeRedBrush");
+
+            // First pass: collect (resultIndex, label) for options and hedges separately.
+            // SubmitTradeAsync produces results interleaved: option, [hedge], option, [hedge]…
+            var optionItems = new List<SaveResultItem>();
+            var hedgeItems = new List<SaveResultItem>();
+            int resultIndex = 0;
+
+            for (int i = 0; i < models.Count && resultIndex < results.Count; i++)
+            {
+                var leg = models[i];
+                int legNum = i + 1;
+
+                // BuySell in TradeLeg is the CLIENT's perspective — invert for bank display.
+                BuySell bankOptionSide = leg.BuySell == BuySell.Buy ? BuySell.Sell : BuySell.Buy;
+                string optionLabel = $"Leg {legNum} Option — {bankOptionSide} {leg.CallPut} " +
+                                     $"{leg.CurrencyPair} {FormatRate(leg.Strike, leg.CurrencyPair)} " +
+                                     $"{leg.ExpiryDate:yyyy-MM-dd}";
+                optionItems.Add(SaveResultItem.FromResult(results[resultIndex], optionLabel, successBrush, failBrush));
+                resultIndex++;
+
+                // HedgeBuySell is also client perspective — invert for bank display.
+                bool hasHedge = leg.Hedge != Models.HedgeType.No
+                    && leg.HedgeNotional.HasValue
+                    && leg.HedgeRate.HasValue
+                    && resultIndex < results.Count;
+
+                if (hasHedge)
+                {
+                    BuySell bankHedgeSide = leg.HedgeBuySell == BuySell.Buy ? BuySell.Sell : BuySell.Buy;
+                    string hedgeLabel = $"Leg {legNum} Hedge — {leg.Hedge} " +
+                                        $"{bankHedgeSide} {leg.CurrencyPair} @ {FormatRate(leg.HedgeRate, leg.CurrencyPair)}";
+                    hedgeItems.Add(SaveResultItem.FromResult(results[resultIndex], hedgeLabel, successBrush, failBrush));
+                    resultIndex++;
+                }
+            }
+
+            // Options first, then hedges
+            var items = optionItems.Concat(hedgeItems).ToList();
+
+            var ownerWindow = Window.GetWindow(this);
+            var dialog = new SaveResultDialog(items, successCount, failCount) { Owner = ownerWindow };
+            dialog.ShowDialog();
+        }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    /// <summary>
+    /// Formats a rate (strike or hedge rate) with a minimum of 4 decimal places,
+    /// or 2 decimal places when the currency pair involves JPY.
+    /// </summary>
+    private static string FormatRate(decimal? value, string currencyPair)
+    {
+        if (!value.HasValue) return "—";
+
+        bool isJpy = currencyPair.Contains("JPY", StringComparison.OrdinalIgnoreCase);
+        int minDecimals = isJpy ? 2 : 4;
+
+        var raw = value.Value.ToString("G29", CultureInfo.InvariantCulture);
+        int dotIndex = raw.IndexOf('.');
+        int actualDecimals = dotIndex >= 0 ? raw.Length - dotIndex - 1 : 0;
+
+        int decimals = Math.Max(actualDecimals, minDecimals);
+        return value.Value.ToString($"F{decimals}", CultureInfo.InvariantCulture);
+    }
+
+    private void OnOpenRecentDialogRequested(IRecentTradeService recentTradeService)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var ownerWindow = Window.GetWindow(this);
+            var dialog = new OpenRecentDialog(recentTradeService) { Owner = ownerWindow };
+
+            if (dialog.ShowDialog() == true && dialog.LoadedTrade != null)
+            {
+                _vm?.LoadTrade(dialog.LoadedTrade);
+            }
+        }, System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private bool _rebuildPending;
+
     private void OnLegsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.OldItems != null)
@@ -333,7 +438,18 @@ public partial class TradeGridControl : UserControl
         if (e.NewItems != null)
             foreach (TradeLegViewModel leg in e.NewItems)
                 leg.PropertyChanged += OnLegPropertyChanged;
-        RebuildGrid();
+        DeferRebuildGrid();
+    }
+
+    private void DeferRebuildGrid()
+    {
+        if (_rebuildPending) return;
+        _rebuildPending = true;
+        Dispatcher.InvokeAsync(() =>
+        {
+            _rebuildPending = false;
+            RebuildGrid();
+        }, System.Windows.Threading.DispatcherPriority.DataBind);
     }
 
     private void OnLegPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -473,138 +589,151 @@ public partial class TradeGridControl : UserControl
     {
         if (_vm == null) return;
 
-        RootGrid.Children.Clear();
-        RootGrid.RowDefinitions.Clear();
-        RootGrid.ColumnDefinitions.Clear();
-        _hedgeDetailElements.Clear();
-        _adminElements.Clear();
-        _hedgeAdminElements.Clear();
-        _legPremiumControls.Clear();
-        _tabOrder.Clear();
-        _distTabMap.Clear();
-
-        _solvingDimOverlay = null;
-        _solvingTargetHighlight = null;
-        _solvingTotalHighlight = null;
-        _solvingPulseStoryboard = null;
-
-        int legCount = _vm.Legs.Count;
-
-        for (int i = 0; i < TotalRows; i++)
-            RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
-        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
-        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
-        for (int i = 0; i < legCount; i++)
-            RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
-
-        KeyboardNavigation.SetTabNavigation(RootGrid, KeyboardNavigationMode.None);
-
-        int totalCols = RootGrid.ColumnDefinitions.Count;
-
-        var headerBg = new Border { Background = FindBrush("BgHeaderRowBrush") };
-        Grid.SetRow(headerBg, RowHeader); Grid.SetColumn(headerBg, 0);
-        Grid.SetColumnSpan(headerBg, totalCols);
-        RootGrid.Children.Add(headerBg);
-
-        var labelColBg = new Border { Background = FindBrush("BgLabelColumnBrush") };
-        Grid.SetRow(labelColBg, 0); Grid.SetColumn(labelColBg, ColLabel);
-        Grid.SetColumnSpan(labelColBg, 2); Grid.SetRowSpan(labelColBg, TotalRows);
-        RootGrid.Children.Add(labelColBg);
-
-        var labelColBorder = new Border
+        RootGrid.BeginInit();
+        try
         {
-            BorderBrush = FindBrush("BorderSubtleBrush"),
-            BorderThickness = new Thickness(0, 0, 1, 0)
-        };
-        Grid.SetRow(labelColBorder, 0); Grid.SetColumn(labelColBorder, ColLabel);
-        Grid.SetColumnSpan(labelColBorder, 2); Grid.SetRowSpan(labelColBorder, TotalRows);
-        RootGrid.Children.Add(labelColBorder);
+            RootGrid.Children.Clear();
+            RootGrid.RowDefinitions.Clear();
+            RootGrid.ColumnDefinitions.Clear();
+            _hedgeDetailElements.Clear();
+            _adminElements.Clear();
+            _hedgeAdminElements.Clear();
+            _legPremiumControls.Clear();
+            _tabOrder.Clear();
+            _distTabMap.Clear();
 
-        var distHeader = new TextBlock
-        {
-            Text = "⇉",
-            ToolTip = "Distribute to all legs",
-            FontWeight = FontWeights.Bold,
-            FontSize = 16,
-            Foreground = FindBrush("TextSecondaryBrush"),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(4, 6, 4, 6)
-        };
-        Grid.SetRow(distHeader, RowHeader); Grid.SetColumn(distHeader, ColDistInput);
-        RootGrid.Children.Add(distHeader);
+            _solvingDimOverlay = null;
+            _solvingTargetHighlight = null;
+            _solvingTotalHighlight = null;
+            _solvingPulseStoryboard = null;
 
-        for (int i = 0; i < legCount; i++)
-        {
-            var leg = _vm.Legs[i];
-            var headerPanel = new DockPanel { Margin = new Thickness(4, 6, 4, 6) };
+            int legCount = _vm.Legs.Count;
 
-            var legLabel = new TextBlock
+            for (int i = 0; i < TotalRows; i++)
+                RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
+            RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30) });
+            for (int i = 0; i < legCount; i++)
+                RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+
+            KeyboardNavigation.SetTabNavigation(RootGrid, KeyboardNavigationMode.None);
+
+            int totalCols = RootGrid.ColumnDefinitions.Count;
+
+            var headerBg = new Border { Background = FindBrush("BgHeaderRowBrush") };
+            Grid.SetRow(headerBg, RowHeader); Grid.SetColumn(headerBg, 0);
+            Grid.SetColumnSpan(headerBg, totalCols);
+            RootGrid.Children.Add(headerBg);
+
+            var labelColBg = new Border { Background = FindBrush("BgLabelColumnBrush") };
+            Grid.SetRow(labelColBg, 0); Grid.SetColumn(labelColBg, ColLabel);
+            Grid.SetColumnSpan(labelColBg, 2); Grid.SetRowSpan(labelColBg, TotalRows);
+            RootGrid.Children.Add(labelColBg);
+
+            var labelColBorder = new Border
             {
-                Text = $"Leg {leg.LegNumber}",
+                BorderBrush = FindBrush("BorderSubtleBrush"),
+                BorderThickness = new Thickness(0, 0, 1, 0)
+            };
+            Grid.SetRow(labelColBorder, 0); Grid.SetColumn(labelColBorder, ColLabel);
+            Grid.SetColumnSpan(labelColBorder, 2); Grid.SetRowSpan(labelColBorder, TotalRows);
+            RootGrid.Children.Add(labelColBorder);
+
+            var distHeader = new TextBlock
+            {
+                Text = "⇉",
+                ToolTip = "Distribute to all legs",
                 FontWeight = FontWeights.Bold,
-                FontSize = 14,
-                Foreground = FindBrush("AccentBlueBrush"),
+                FontSize = 16,
+                Foreground = FindBrush("TextSecondaryBrush"),
+                HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
-                FontFamily = FindFont("MainFont")
+                Margin = new Thickness(4, 6, 4, 6)
             };
-            DockPanel.SetDock(legLabel, Dock.Left);
-            headerPanel.Children.Add(legLabel);
+            Grid.SetRow(distHeader, RowHeader); Grid.SetColumn(distHeader, ColDistInput);
+            RootGrid.Children.Add(distHeader);
 
-            var btnPanel = new StackPanel
+            for (int i = 0; i < legCount; i++)
             {
-                Orientation = Orientation.Horizontal,
-                HorizontalAlignment = HorizontalAlignment.Right
-            };
-            DockPanel.SetDock(btnPanel, Dock.Right);
+                var leg = _vm.Legs[i];
+                var headerPanel = new DockPanel { Margin = new Thickness(4, 6, 4, 6) };
 
-            var btnCopy = CreateIconButton("+", "Copy Leg");
-            btnCopy.Foreground = FindBrush("PositiveGreenBrush");
-            btnCopy.Command = _vm.CopyLegCommand;
-            btnCopy.CommandParameter = leg;
-            btnPanel.Children.Add(btnCopy);
-
-            var btnDelete = CreateIconButton("✕", "Delete Leg");
-            btnDelete.Foreground = FindBrush("NegativeRedBrush");
-            btnDelete.Command = _vm.DeleteLegCommand;
-            btnDelete.CommandParameter = leg;
-            btnPanel.Children.Add(btnDelete);
-
-            headerPanel.Children.Add(btnPanel);
-            Grid.SetRow(headerPanel, RowHeader);
-            Grid.SetColumn(headerPanel, LegValCol(i));
-            RootGrid.Children.Add(headerPanel);
-
-            var validIcon = new TextBlock
-            {
-                Text = "⚠",
-                Foreground = FindBrush("NegativeRedBrush"),
-                FontSize = 13,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(6, 0, 0, 0),
-                ToolTip = "Required fields missing"
-            };
-            validIcon.SetBinding(UIElement.VisibilityProperty,
-                new Binding(nameof(leg.HasValidationError))
+                var legLabel = new TextBlock
                 {
-                    Source = leg,
-                    Converter = new BooleanToVisibilityConverter()
-                });
-            DockPanel.SetDock(validIcon, Dock.Left);
-            headerPanel.Children.Insert(1, validIcon);
+                    Text = $"Leg {leg.LegNumber}",
+                    FontWeight = FontWeights.Bold,
+                    FontSize = 14,
+                    Foreground = FindBrush("AccentBlueBrush"),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    FontFamily = FindFont("MainFont")
+                };
+                DockPanel.SetDock(legLabel, Dock.Left);
+                headerPanel.Children.Add(legLabel);
+
+                var btnPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right
+                };
+                DockPanel.SetDock(btnPanel, Dock.Right);
+
+                var btnCopy = CreateIconButton("+", "Copy Leg");
+                btnCopy.Foreground = FindBrush("PositiveGreenBrush");
+                btnCopy.Command = _vm.CopyLegCommand;
+                btnCopy.CommandParameter = leg;
+                btnPanel.Children.Add(btnCopy);
+
+                var btnDelete = CreateIconButton("✕", "Delete Leg");
+                btnDelete.Foreground = FindBrush("NegativeRedBrush");
+                btnDelete.Command = _vm.DeleteLegCommand;
+                btnDelete.CommandParameter = leg;
+                btnPanel.Children.Add(btnDelete);
+
+                headerPanel.Children.Add(btnPanel);
+                Grid.SetRow(headerPanel, RowHeader);
+                Grid.SetColumn(headerPanel, LegValCol(i));
+                RootGrid.Children.Add(headerPanel);
+
+                var validIcon = new TextBlock
+                {
+                    Text = "⚠",
+                    Foreground = FindBrush("NegativeRedBrush"),
+                    FontSize = 13,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(6, 0, 0, 0),
+                };
+                validIcon.SetBinding(UIElement.VisibilityProperty,
+                    new Binding(nameof(leg.HasValidationError))
+                    {
+                        Source = leg,
+                        Converter = new BooleanToVisibilityConverter()
+                    });
+                validIcon.SetBinding(FrameworkElement.ToolTipProperty,
+                    new Binding(nameof(MainViewModel.SaveValidationTooltip))
+                    {
+                        Source = _vm,
+                        Converter = (IValueConverter)FindResource("StringToTooltip")
+                    });
+                DockPanel.SetDock(validIcon, Dock.Left);
+                headerPanel.Children.Insert(1, validIcon);
+            }
+
+            AddSectionHeaderRow(RowTradeSection, "📋  TRADE DETAILS", totalCols);
+            AddSectionHeaderRow(RowOptionSection, "📊  OPTION DETAILS", totalCols);
+            AddSectionHeaderRow(RowAmountSection, "💰  AMOUNTS & PREMIUM", totalCols);
+
+            BuildOptionRows(legCount, totalCols);
+            BuildAdminRows(legCount, totalCols);
+            BuildHedgeRows(legCount, totalCols);
+            UpdateHedgeVisibility();
+            UpdateAdminVisibility();
         }
-
-        AddSectionHeaderRow(RowTradeSection, "📋  TRADE DETAILS", totalCols);
-        AddSectionHeaderRow(RowOptionSection, "📊  OPTION DETAILS", totalCols);
-        AddSectionHeaderRow(RowAmountSection, "💰  AMOUNTS & PREMIUM", totalCols);
-
-        BuildOptionRows(legCount, totalCols);
-        BuildAdminRows(legCount, totalCols);
-        BuildHedgeRows(legCount, totalCols);
-        UpdateHedgeVisibility();
-        UpdateAdminVisibility();
+        finally
+        {
+            RootGrid.EndInit();
+        }
     }
 
     // ================================================================
@@ -662,6 +791,16 @@ public partial class TradeGridControl : UserControl
             if (s is ComboBox cb && cb.SelectedItem is string val)
                 _vm?.SetAllCounterpartCommand.Execute(val);
         };
+        _distCounterpart.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter && s is ComboBox cb && !string.IsNullOrWhiteSpace(cb.Text))
+                _vm?.SetAllCounterpartCommand.Execute(cb.Text);
+        };
+        _distCounterpart.LostFocus += (s, _) =>
+        {
+            if (s is ComboBox cb && !string.IsNullOrWhiteSpace(cb.Text) && cb.SelectedItem == null)
+                _vm?.SetAllCounterpartCommand.Execute(cb.Text);
+        };
         AddCell(RowCounterpart, ColDistInput, _distCounterpart);
 
         _distCcyPair = CreateDistComboBox("ReferenceData.CurrencyPairs");
@@ -670,12 +809,22 @@ public partial class TradeGridControl : UserControl
             if (s is ComboBox cb && cb.SelectedItem is string val)
                 _vm?.SetAllCurrencyPairCommand.Execute(val);
         };
+        _distCcyPair.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter && s is ComboBox cb && !string.IsNullOrWhiteSpace(cb.Text))
+                _vm?.SetAllCurrencyPairCommand.Execute(cb.Text);
+        };
+        _distCcyPair.LostFocus += (s, _) =>
+        {
+            if (s is ComboBox cb && !string.IsNullOrWhiteSpace(cb.Text) && cb.SelectedItem == null)
+                _vm?.SetAllCurrencyPairCommand.Execute(cb.Text);
+        };
         AddCell(RowCurrencyPair, ColDistInput, _distCcyPair);
 
-        AddDistToggle(RowBuySell, ColDistToggle, DistToggle_BuySell, "Flippa Buy/Sell på alla legs");
-        AddDistToggle(RowCallPut, ColDistToggle, DistToggle_CallPut, "Flippa Call/Put på alla legs");
-        AddDistToggle(RowPremium, ColDistToggle, DistToggle_PremiumStyle, "Flippa Premium Style på alla legs");
-        AddDistToggle(RowPremiumDate, ColDistToggle, DistToggle_PremiumDate, "Flippa Premium Date Type på alla legs");
+        AddDistToggle(RowBuySell, ColDistToggle, DistToggle_BuySell, "Flip Buy/Sell on all legs");
+        AddDistToggle(RowCallPut, ColDistToggle, DistToggle_CallPut, "Flip Call/Put on all legs");
+        AddDistToggle(RowPremium, ColDistToggle, DistToggle_PremiumStyle, "Flip Premium Style on all legs");
+        AddDistToggle(RowPremiumDate, ColDistToggle, DistToggle_PremiumDate, "Flip Premium Date Type on all legs");
 
         var distStrike = CreateDistTextBox();
         distStrike.ToolTip = "Enter strike value. Comma → dot. Press Enter to apply to all legs.";
@@ -711,6 +860,16 @@ public partial class TradeGridControl : UserControl
         {
             if (s is ComboBox cb && cb.SelectedItem is string val)
                 _vm?.SetAllCutCommand.Execute(val);
+        };
+        _distCut.KeyDown += (s, e) =>
+        {
+            if (e.Key == Key.Enter && s is ComboBox cb && !string.IsNullOrWhiteSpace(cb.Text))
+                _vm?.SetAllCutCommand.Execute(cb.Text);
+        };
+        _distCut.LostFocus += (s, _) =>
+        {
+            if (s is ComboBox cb && !string.IsNullOrWhiteSpace(cb.Text) && cb.SelectedItem == null)
+                _vm?.SetAllCutCommand.Execute(cb.Text);
         };
         AddCell(RowCut, ColDistInput, _distCut);
 
@@ -780,7 +939,25 @@ public partial class TradeGridControl : UserControl
                 AddCell(RowCounterpart, vc, counterpartCombo);
                 legControls[i].Add((RowCounterpart, counterpartCombo));
 
-                var ccyPairCombo = CreateLegComboBox(leg, nameof(leg.CurrencyPair), "ReferenceData.CurrencyPairs");
+                var ccyPairCombo = new ComboBox
+                {
+                    Style = FindStyle<ComboBox>("TradingComboBox"),
+                    Margin = new Thickness(2, 1, 2, 1)
+                };
+                ccyPairCombo.SetBinding(ComboBox.ItemsSourceProperty,
+                    new Binding("ReferenceData.CurrencyPairs") { Source = _vm });
+                ccyPairCombo.SetBinding(ComboBox.TextProperty,
+                    new Binding(nameof(leg.CurrencyPair))
+                    {
+                        Source = leg,
+                        UpdateSourceTrigger = UpdateSourceTrigger.LostFocus
+                    });
+                // Selecting from the dropdown list commits immediately (no typing involved)
+                ccyPairCombo.SelectionChanged += (s, _) =>
+                {
+                    if (s is ComboBox cb && cb.SelectedItem is string val)
+                        leg.CurrencyPair = val;
+                };
                 AddCell(RowCurrencyPair, vc, ccyPairCombo);
                 legControls[i].Add((RowCurrencyPair, ccyPairCombo));
             }
@@ -804,6 +981,54 @@ public partial class TradeGridControl : UserControl
                 if (e.Key == Key.Enter && s is TextBox tb)
                 { leg.ApplyExpiryInput(tb.Text); Keyboard.ClearFocus(); }
             };
+
+            // Weekend roll dialog — fires when user types a weekend date directly in the grid.
+            leg.WeekendExpiryDetected += PromptWeekendRoll;
+
+            // Weekend → red border, Holiday → red foreground.
+            // Both auto-clear when the user enters a valid business day.
+            var defaultBorder = expiryTb.BorderBrush;
+            var defaultForeground = expiryTb.Foreground;
+
+            void UpdateExpiryVisuals()
+            {
+                if (leg.ExpiryIsWeekend)
+                {
+                    expiryTb.BorderBrush = FindBrush("NegativeRedBrush");
+                    expiryTb.BorderThickness = new Thickness(2);
+                    expiryTb.Foreground = defaultForeground ?? FindBrush("TextPrimaryBrush");
+                    expiryTb.ToolTip = leg.ExpiryWarningTooltip is { Length: > 0 } wt
+                        ? wt
+                        : "⚠ Expiry falls on a weekend";
+                }
+                else if (leg.ExpiryIsHoliday)
+                {
+                    expiryTb.BorderBrush = defaultBorder ?? FindBrush("BorderDefaultBrush");
+                    expiryTb.BorderThickness = new Thickness(1);
+                    expiryTb.Foreground = FindBrush("NegativeRedBrush");
+                    expiryTb.ToolTip = leg.ExpiryWarningTooltip is { Length: > 0 } ht
+                        ? ht
+                        : "⚠ Expiry falls on a local market holiday";
+                }
+                else
+                {
+                    expiryTb.BorderBrush = defaultBorder ?? FindBrush("BorderDefaultBrush");
+                    expiryTb.BorderThickness = new Thickness(1);
+                    expiryTb.Foreground = defaultForeground ?? FindBrush("TextPrimaryBrush");
+                    expiryTb.ToolTip = "Enter tenor (on, o/n, 1d, 1w, 1m, 1y) or date (dd/MM, dd-MMM, dd/MM/yyyy)";
+                }
+            }
+
+            leg.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is nameof(leg.ExpiryIsWeekend)
+                                    or nameof(leg.ExpiryIsHoliday)
+                                    or nameof(leg.ExpiryWarningTooltip))
+                    UpdateExpiryVisuals();
+            };
+
+            UpdateExpiryVisuals();
+
             AddCell(RowExpiry, vc, expiryTb);
             legControls[i].Add((RowExpiry, expiryTb));
 
@@ -850,8 +1075,6 @@ public partial class TradeGridControl : UserControl
             AddCell(RowPremiumAmount, vc, premAmtTb);
             legControls[i].Add((RowPremiumAmount, premAmtTb));
 
-            _legPremiumControls.Add((premiumTb, premAmtTb));
-
             // Premium Date — read-only, skip in tab order
             AddCell(RowPremiumDate, vc, CreateLegTextBoxWithInlineSuffix(leg, nameof(leg.PremiumDate),
                 leg, nameof(leg.PremiumDateType), () => leg.TogglePremiumDateTypeCommand.Execute(null),
@@ -872,12 +1095,10 @@ public partial class TradeGridControl : UserControl
             }
 
         // ── Dist → Leg 1 tab map ─────────────────────────────────────
-        // For each dist TextBox, map it to the first leg's control on the
-        // same row. The mapping is set up after all leg controls are registered
-        // so legControls[0] is fully populated.
         void MapDist(UIElement distCtrl, int row)
         {
-            var leg1Match = legControls[0].FirstOrDefault(x => x.row == row);
+            if (!legControls.TryGetValue(0, out var leg1Controls)) return;
+            var leg1Match = leg1Controls.FirstOrDefault(x => x.row == row);
             if (leg1Match.control != null)
                 _distTabMap[distCtrl] = leg1Match.control;
         }
@@ -893,7 +1114,7 @@ public partial class TradeGridControl : UserControl
 
     private void BuildAdminRows(int legCount, int totalCols)
     {
-        AddSectionHeaderRow(RowAdminSection, "⚙  ADMIN", totalCols);
+        AddSectionHeaderRow(RowAdminSection, "📋  BOOKING DETAILS", totalCols);
         AddRowLabel(RowPortfolio, "Portfolio MX3", totalCols);
         AddRowLabel(RowTrader, "Trader", totalCols);
         AddRowLabel(RowExecutionTime, "Execution Time", totalCols);
@@ -1034,10 +1255,10 @@ public partial class TradeGridControl : UserControl
         AddRowLabel(RowHedgeNotional, "Notional", totalCols, isHedgeDetail: true);
         AddRowLabel(RowHedgeRate, "Hedge Rate", totalCols, isHedgeDetail: true);
         AddRowLabel(RowHedgeSettlement, "Settlement Date", totalCols, isHedgeDetail: true);
+        AddRowLabel(RowBookCalypso, "Calypso Book", totalCols, isHedgeDetail: true);  // ← direkt under Settlement Date
         AddRowLabel(RowHedgeTvtic, "Hedge TVTIC", totalCols);
         AddRowLabel(RowHedgeUti, "Hedge UTI", totalCols);
         AddRowLabel(RowHedgeIsin, "Hedge ISIN", totalCols);
-        AddRowLabel(RowBookCalypso, "Book Calypso", totalCols);
 
         AddDistToggle(RowHedgeBuySell, ColDistToggle, DistToggle_HedgeBuySell, "Flippa Hedge Buy/Sell på alla legs");
 
@@ -1129,6 +1350,12 @@ public partial class TradeGridControl : UserControl
             AddCell(RowHedgeSettlement, vc, hSettlement);
             legHedgeElements.Add(hSettlement);
 
+            // Calypso Book — visible only when Admin + Hedge active
+            var hBook = CreateLegComboBox(leg, nameof(leg.BookCalypso), "ReferenceData.CalypsoBooks");
+            AddCell(RowBookCalypso, vc, hBook);
+            legHedgeAdminElements.Add(hBook);
+            legHedgeControls[i].Add((RowBookCalypso, hBook, () => leg.HasHedge));
+
             var hTvtic = CreateLegTextBox(leg, nameof(leg.HedgeTVTIC));
             AddCell(RowHedgeTvtic, vc, hTvtic);
             legHedgeAdminElements.Add(hTvtic);
@@ -1143,11 +1370,6 @@ public partial class TradeGridControl : UserControl
             AddCell(RowHedgeIsin, vc, hIsin);
             legHedgeAdminElements.Add(hIsin);
             legHedgeControls[i].Add((RowHedgeIsin, hIsin, () => leg.HasHedge));
-
-            var hBook = CreateLegTextBox(leg, nameof(leg.BookCalypso));
-            AddCell(RowBookCalypso, vc, hBook);
-            legHedgeAdminElements.Add(hBook);
-            legHedgeControls[i].Add((RowBookCalypso, hBook, () => leg.HasHedge));
 
             _hedgeDetailElements.Add(legHedgeElements);
             _hedgeAdminElements.Add(legHedgeAdminElements);
@@ -1173,7 +1395,8 @@ public partial class TradeGridControl : UserControl
         // Dist → Leg 1 map for hedge distributor inputs
         void MapDistHedge(UIElement distCtrl, int row)
         {
-            var leg1Match = legHedgeControls[0].FirstOrDefault(x => x.row == row);
+            if (!legHedgeControls.TryGetValue(0, out var leg1Controls)) return;
+            var leg1Match = leg1Controls.FirstOrDefault(x => x.row == row);
             if (leg1Match.control != null)
                 _distTabMap[distCtrl] = leg1Match.control;
         }
@@ -1530,8 +1753,8 @@ public partial class TradeGridControl : UserControl
     //  FACTORY: Leg column controls
     // ================================================================
 
-    private TextBox CreateLegTextBox(TradeLegViewModel leg, string path,
-        string? stringFormat = null, bool isReadOnly = false,
+    private TextBox CreateLegTextBox(TradeLegViewModel leg, String path,
+        String? stringFormat = null, bool isReadOnly = false,
         UpdateSourceTrigger trigger = UpdateSourceTrigger.PropertyChanged)
     {
         var tb = new TextBox
@@ -1690,5 +1913,43 @@ public partial class TradeGridControl : UserControl
         }
         public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture)
             => throw new NotImplementedException();
+    }
+
+    /// <summary>
+    /// Shows a dark-themed weekend roll dialog for a single leg and applies the
+    /// chosen roll direction via <see cref="TradeLegViewModel.ApplyExpiryDateDirect"/>.
+    /// Called both from the grid (via <see cref="TradeLegViewModel.WeekendExpiryDetected"/>)
+    /// and from the clipboard flow (via <see cref="MainWindow"/>).
+    /// </summary>
+    internal static void PromptWeekendRoll(TradeLegViewModel leg)
+    {
+        if (!leg.ExpiryIsWeekend || !leg.ExpiryDate.HasValue)
+            return;
+
+        var date = leg.ExpiryDate.Value;
+        var dialog = new WeekendRollDialog(leg.LegNumber, date)
+        {
+            Owner = Application.Current.MainWindow
+        };
+        dialog.ShowDialog();
+
+        switch (dialog.ChosenAction)
+        {
+            case WeekendRollDialog.RollAction.Previous:
+                var prev = date.AddDays(-1);
+                while (prev.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+                    prev = prev.AddDays(-1);
+                leg.ApplyExpiryDateDirect(prev);
+                break;
+
+            case WeekendRollDialog.RollAction.Next:
+                var next = date.AddDays(1);
+                while (next.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+                    next = next.AddDays(1);
+                leg.ApplyExpiryDateDirect(next);
+                break;
+
+                // RollAction.Keep → keep the weekend date as-is (not bookable)
+        }
     }
 }

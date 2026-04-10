@@ -2,21 +2,21 @@
 
 public enum BuySell
 {
-    Buy,
-    Sell
+    Buy = 0,
+    Sell = 1
 }
 
 public enum CallPut
 {
-    Call,
-    Put
+    Call = 0,
+    Put = 1
 }
 
 public enum HedgeType
 {
-    No,
-    Spot,
-    Forward
+    No = 0,
+    Spot = 1,
+    Forward = 2
 }
 
 /// <summary>
@@ -27,13 +27,13 @@ public enum HedgeType
 /// </summary>
 public enum PremiumStyle
 {
-    PctBase,
-    PipsQuote,
-    PctQuote
+    PctBase = 0,
+    PipsQuote = 1,
+    PctQuote = 2
 }
 
 public enum PremiumDateType
 {
-    Spot,
-    Forward
+    Spot = 0,
+    Forward = 1
 }

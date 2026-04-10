@@ -1,37 +1,15 @@
-﻿#region Namespaces
-using System;
-using System.IO;
+﻿using System.Data;
 using System.Collections.Generic;
-using System.Collections;
-using System.ComponentModel;
-using System.Data;
-using System.Data.Sql;
-using System.Data.SqlClient;
-using System.Drawing;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml;
-using System.Xml.Linq;
-using System.Diagnostics;
-#endregion
 
 namespace FxTradeConfirmation.Helpers
 {
+
     class Calendar
     {
-        #region Variables
-
         private DataTable _holidays = new DataTable();
         private string[] _country;
-        public DataTable dt = new DataTable();
 
-        // Below you see the countries for which the holiday calendar is covering, TARGET is the offical EURO calendar
-        //private string[] _countries = new string[] { "AUSTRALIA", "CANADA", "CHINA", "DENMARK", "ENGLAND", "EURO", "FRANCE", "GERMANY", "GLOBAL", "ITALY", "JAPAN", "NORWAY", "SWEDEN", "SWITZERLAND", "TARGET", "USA" };
-
-        #endregion
-
-        #region Constructor
         public Calendar(DataTable Holidays)
         {
             _holidays.Columns.Add("Market", typeof(string));
@@ -71,9 +49,7 @@ namespace FxTradeConfirmation.Helpers
                 }
             }
         }
-        #endregion
 
-        #region Properties
         public string[] Country
         {
             get
@@ -90,32 +66,76 @@ namespace FxTradeConfirmation.Helpers
             }
         }
 
-        #endregion
-
-        #region Methods
         public bool IsHoliday(DateTime date)
         {
-            bool output = false;
+            if (IsWeekend(date))
+                return true;
+
+            var dateOnly = date.Date;
 
             foreach (DataRow row in _holidays.Rows)
             {
-                if (row["HolidayDate"].ToString() == date.ToString() || IsWeekend(date) == true)
-                {
-                    output = true;
-                    break;
-                }
+                if (row["HolidayDate"] is DateTime holidayDate && holidayDate.Date == dateOnly)
+                    return true;
             }
 
-            return output;
+            return false;
         }
-        #endregion
 
-        #region Functions
         public static bool IsWeekend(DateTime date)
         {
             return new[] { DayOfWeek.Sunday, DayOfWeek.Saturday }.Contains(date.DayOfWeek);
         }
-        #endregion
 
+        /// <summary>
+        /// Checks whether <paramref name="date"/> is a local market holiday
+        /// (excluding weekends) for any of the given <paramref name="markets"/>.
+        /// Returns the match status and a human-readable description of the
+        /// matching holiday(s).
+        /// </summary>
+        /// <param name="date">The date to check.</param>
+        /// <param name="holidays">
+        /// The full holidays DataTable (columns: Market, HolidayDate, and
+        /// optionally HolidayName).
+        /// </param>
+        /// <param name="markets">
+        /// Market/calendar names to check (e.g. "SWEDEN", "TARGET").
+        /// </param>
+        /// <returns>
+        /// A tuple where <c>isHoliday</c> is true when at least one market
+        /// has a holiday on that date, and <c>description</c> contains a
+        /// comma-separated list of matching market names (with holiday name
+        /// if available).
+        /// </returns>
+        public static (bool isHoliday, string description) IsMarketHoliday(
+            DateTime date, DataTable holidays, IEnumerable<string> markets)
+        {
+            if (holidays == null || holidays.Rows.Count == 0)
+                return (false, string.Empty);
+
+            var dateOnly = date.Date;
+            var marketSet = new HashSet<string>(markets, StringComparer.OrdinalIgnoreCase);
+            bool hasNameColumn = holidays.Columns.Contains("HolidayName");
+
+            var matches = new List<string>();
+
+            foreach (DataRow row in holidays.Rows)
+            {
+                if (row["HolidayDate"] is DateTime holidayDate
+                    && holidayDate.Date == dateOnly
+                    && row["Market"] is string market
+                    && marketSet.Contains(market))
+                {
+                    string name = hasNameColumn && row["HolidayName"] is string hn && !string.IsNullOrWhiteSpace(hn)
+                        ? $"{market} ({hn})"
+                        : market;
+                    matches.Add(name);
+                }
+            }
+
+            return matches.Count > 0
+                ? (true, string.Join(", ", matches))
+                : (false, string.Empty);
+        }
     }
 }

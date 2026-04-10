@@ -1,0 +1,624 @@
+﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
+        x:Class="FxTradeConfirmation.Views.ClipboardCaptureDialog"
+        Title="Option Request Captured" Width="560" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        KeyDown="Window_KeyDown">
+
+    <Border Background="{StaticResource BgCardBrush}"
+            BorderBrush="{StaticResource AccentBlueBrush}"
+            BorderThickness="1" CornerRadius="12" Padding="24">
+        <Border.Resources>
+
+            <!-- ── Dark context menu ── -->
+            <Style x:Key="DarkContextMenu" TargetType="ContextMenu">
+                <Setter Property="Background" Value="{StaticResource BgMediumBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource BorderDefaultBrush}"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Padding" Value="3"/>
+                <Setter Property="HasDropShadow" Value="True"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ContextMenu">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    Padding="{TemplateBinding Padding}">
+                                <StackPanel IsItemsHost="True"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ── Dark menu item ── -->
+            <Style x:Key="DarkMenuItem" TargetType="MenuItem">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="bg"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}">
+                                <TextBlock Text="{TemplateBinding Header}"
+                                           Foreground="{TemplateBinding Foreground}"
+                                           FontFamily="{TemplateBinding FontFamily}"
+                                           FontSize="{TemplateBinding FontSize}"
+                                           VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource AccentBlueDarkBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ══ Calendar day button — dark themed ══════════════════════ -->
+            <Style x:Key="CalDayButton" TargetType="CalendarDayButton">
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                <Setter Property="FontSize"   Value="11"/>
+                <Setter Property="MinWidth"   Value="28"/>
+                <Setter Property="MinHeight"  Value="28"/>
+                <Setter Property="Margin"     Value="1"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="CalendarDayButton">
+                            <Grid>
+                                <Border x:Name="Bg"
+                                        Background="Transparent"
+                                        CornerRadius="4"/>
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Margin="2"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBlueBrush}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </Trigger>
+                                <Trigger Property="IsToday" Value="True">
+                                    <Setter TargetName="Bg" Property="BorderBrush"     Value="{StaticResource AccentBlueBrush}"/>
+                                    <Setter TargetName="Bg" Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                                <Trigger Property="IsBlackedOut" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource TextDimmedBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsInactive" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource TextDimmedBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ══ Calendar month/year button ════════════════════════════ -->
+            <Style x:Key="CalMonthButton" TargetType="CalendarButton">
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                <Setter Property="FontSize"   Value="11"/>
+                <Setter Property="MinWidth"   Value="40"/>
+                <Setter Property="MinHeight"  Value="28"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="CalendarButton">
+                            <Grid>
+                                <Border x:Name="Bg"
+                                        Background="Transparent"
+                                        CornerRadius="4"/>
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  Margin="2"/>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="HasSelectedDays" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBlueBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ══ CalendarItem — hides built-in header row ═════════════ -->
+            <Style x:Key="CalItemHiddenHeader" TargetType="primitives:CalendarItem">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="primitives:CalendarItem">
+                            <ControlTemplate.Resources>
+                                <!-- DayTitle must live here — CalendarItem looks
+                                     in ControlTemplate.Resources first -->
+                                <DataTemplate x:Key="{x:Static primitives:CalendarItem.DayTitleTemplateResourceKey}">
+                                    <TextBlock Text="{Binding}"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               FontSize="10"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Margin="0,4,0,4"/>
+                                </DataTemplate>
+                            </ControlTemplate.Resources>
+                            <Grid>
+                                <!-- Required PART_ elements — collapsed but present -->
+                                <Button x:Name="PART_PreviousButton" Visibility="Collapsed"/>
+                                <Button x:Name="PART_HeaderButton"   Visibility="Collapsed"/>
+                                <Button x:Name="PART_NextButton"     Visibility="Collapsed"/>
+
+                                <!-- Day grid — 7 cols × 7 rows (weekday header + 6 week rows).
+                                     CalendarItem code-behind expects these to exist; it does NOT
+                                     create them — it only assigns Grid.Row/Column on child elements. -->
+                                <Grid x:Name="PART_MonthView" Margin="6,1,6,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                </Grid>
+
+                                <!-- Year/decade view — 4 cols × 3 rows -->
+                                <Grid x:Name="PART_YearView" Margin="6,1,6,6" Visibility="Hidden">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                </Grid>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ══ Nav button — removes default WPF chrome ══════════════ -->
+            <Style x:Key="CalNavButton" TargetType="Button">
+                <Setter Property="Width" Value="28"/>
+                <Setter Property="Height" Value="28"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bg" Background="{TemplateBinding Background}" CornerRadius="4">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource BgHoverBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="bg" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- ══ DayTitle data template (fallback — also in ControlTemplate.Resources) ══ -->
+            <DataTemplate x:Key="CalDayTitleTemplate">
+                <TextBlock Text="{Binding}"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           FontSize="10"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </DataTemplate>
+
+            <!-- ══ Shared dialog-button template — replaces 4 × identical ControlTemplate ══ -->
+            <ControlTemplate x:Key="DialogButtonTemplate" TargetType="Button">
+                <Border x:Name="border"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="6" Padding="{TemplateBinding Padding}"
+                        SnapsToDevicePixels="True">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="border" Property="Background"  Value="{StaticResource BgHoverBrush}"/>
+                        <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="border" Property="Background" Value="{StaticResource AccentBlueMutedBrush}"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+
+            <!-- Reject: overrides hover/press triggers with red palette -->
+            <ControlTemplate x:Key="RejectButtonTemplate" TargetType="Button">
+                <Border x:Name="border"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="6" Padding="{TemplateBinding Padding}"
+                        SnapsToDevicePixels="True">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="border" Property="Background"  Value="{StaticResource NegativeRedGlowBrush}"/>
+                        <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource NegativeRedBrush}"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="border" Property="Background" Value="{StaticResource NegativeRedPressBrush}"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+
+            <!-- Both: overrides hover/press triggers with blue-glow palette -->
+            <ControlTemplate x:Key="BothButtonTemplate" TargetType="Button">
+                <Border x:Name="border"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="6" Padding="{TemplateBinding Padding}"
+                        SnapsToDevicePixels="True">
+                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="border" Property="Background"  Value="{StaticResource AccentBlueGlowBrush}"/>
+                        <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource AccentBlueBrush}"/>
+                    </Trigger>
+                    <Trigger Property="IsPressed" Value="True">
+                        <Setter TargetName="border" Property="Background" Value="{StaticResource AccentBluePressBrush}"/>
+                    </Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate>
+
+        </Border.Resources>
+
+        <StackPanel>
+
+            <!-- ── Header (draggable) ── -->
+            <DockPanel Margin="0,0,0,16" Background="Transparent"
+                       Cursor="SizeAll">
+                <Button Content="✕" DockPanel.Dock="Right"
+                        Style="{StaticResource IconButton}"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Click="Reject_Click" ToolTip="Reject (Esc)"
+                        VerticalAlignment="Top"/>
+                <TextBlock Text="📋  Option Request Detected"
+                           Style="{StaticResource FieldLabel}"
+                           FontSize="14" FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- ── Parse status badge ── -->
+            <Border x:Name="ParseStatusBorder"
+                    CornerRadius="6" Padding="10,6" Margin="0,0,0,16"
+                    HorizontalAlignment="Left">
+                <TextBlock x:Name="ParseStatusLabel"
+                           FontFamily="{StaticResource MonoFont}"
+                           FontSize="11" FontWeight="SemiBold"/>
+            </Border>
+
+            <!-- ── Summary row: pair / expiry / spot ── -->
+            <Border Background="{StaticResource BgDarkBrush}"
+                    BorderBrush="{StaticResource BorderSubtleBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="14,12"
+                    Margin="0,0,0,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="PAIR" Style="{StaticResource FieldLabel}"
+                                   FontSize="9" Margin="0,0,0,3"/>
+                        <TextBlock x:Name="PairLabel"
+                                   FontFamily="{StaticResource MonoFont}"
+                                   FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource AccentBlueBrush}"/>
+                    </StackPanel>
+
+                    <!-- x:Name="ExpiryStack" — code-behind appends hint + Popup here -->
+                    <StackPanel x:Name="ExpiryStack" Grid.Column="1">
+                        <TextBlock Text="EXPIRY" Style="{StaticResource FieldLabel}"
+                                   FontSize="9" Margin="0,0,0,3"/>
+                        <TextBlock x:Name="ExpiryLabel"
+                                   FontFamily="{StaticResource MonoFont}"
+                                   FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Foreground"      Value="{StaticResource AccentBlueBrush}"/>
+                                            <Setter Property="TextDecorations" Value="Underline"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <!-- hint TextBlock and Popup injected by BuildHeaderPicker() -->
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="SPOT REF" Style="{StaticResource FieldLabel}"
+                                   FontSize="9" Margin="0,0,0,3"/>
+                        <TextBlock x:Name="SpotLabel"
+                                   FontFamily="{StaticResource MonoFont}"
+                                   FontSize="15" FontWeight="SemiBold"
+                                   Foreground="{StaticResource WarningAmberBrush}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ── Legs ── -->
+            <TextBlock Text="LEGS" Style="{StaticResource FieldLabel}"
+                       FontSize="9" Margin="0,0,0,6"/>
+            <ItemsControl x:Name="LegsList" Margin="0,0,0,16">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource BgInputBrush}"
+                                BorderBrush="{StaticResource BorderSubtleBrush}"
+                                BorderThickness="1" CornerRadius="6"
+                                Padding="12,10" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="24"/>
+                                    <ColumnDefinition Width="56"/>
+                                    <ColumnDefinition Width="56"/>
+                                    <ColumnDefinition Width="80"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding LegNumber}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="10"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           VerticalAlignment="Bottom"
+                                           Margin="0,0,0,2"/>
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="SIDE" FontSize="8"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
+                                    <Button Content="{Binding BuySell}"
+                                            Background="{Binding BuySellBrush}"
+                                            Foreground="{StaticResource TextWhiteBrush}"
+                                            BorderThickness="0"
+                                            FontFamily="{StaticResource MonoFont}"
+                                            FontSize="11" FontWeight="Bold"
+                                            Padding="6,3" Cursor="Hand"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            ToolTip="Click to toggle Buy / Sell"
+                                            Tag="{Binding}"
+                                            Click="ToggleBuySell_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <TextBlock Text="TYPE" FontSize="8"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
+                                    <Button Content="{Binding PutCall}"
+                                            Background="{Binding CallPutBrush}"
+                                            Foreground="{StaticResource TextWhiteBrush}"
+                                            BorderThickness="0"
+                                            FontFamily="{StaticResource MonoFont}"
+                                            FontSize="11" FontWeight="Bold"
+                                            Padding="6,3" Cursor="Hand"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            ToolTip="Click to toggle Call / Put"
+                                            Tag="{Binding}"
+                                            Click="ToggleCallPut_Click">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="3" VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <TextBlock Text="STRIKE" FontSize="8"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
+                                    <TextBlock Text="{Binding Strike}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="13" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="4" VerticalAlignment="Center" Margin="8,0,0,0">
+                                    <TextBlock Text="NOTIONAL" FontSize="8"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               Margin="0,0,0,3"/>
+                                    <TextBlock Text="{Binding NotionalDisplay}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="13"
+                                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ── Per-leg expiry pickers (mixed-expiry mode only) ── -->
+            <ItemsControl x:Name="LegExpiryList" Margin="0,-10,0,16">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource BgInputBrush}"
+                                BorderBrush="{StaticResource BorderSubtleBrush}"
+                                BorderThickness="1" CornerRadius="6"
+                                Padding="12,8" Margin="0,0,0,4">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding LegNumber}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="10"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,10,0"/>
+                                <TextBlock Text="EXPIRY" FontSize="8"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+                                <!-- Found by FindChild in BuildLegPickers() -->
+                                <TextBlock x:Name="LegExpiryLabel"
+                                           Text="{Binding ExpiryDisplay}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="13" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           Cursor="Hand"
+                                           ToolTip="Click to change expiry date">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Foreground"      Value="{StaticResource AccentBlueBrush}"/>
+                                                    <Setter Property="TextDecorations" Value="Underline"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <TextBlock Text="  ✎" FontSize="10"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- ── Raw OVML string ── -->
+            <Border Background="{StaticResource BgDarkBrush}"
+                    BorderBrush="{StaticResource BorderSubtleBrush}"
+                    BorderThickness="1" CornerRadius="6"
+                    Padding="10,8" Margin="0,0,0,20">
+                <TextBlock x:Name="OvmlLabel"
+                           FontFamily="{StaticResource MonoFont}" FontSize="11"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           TextWrapping="Wrap"
+                           ToolTip="Right-click to copy OVML">
+                    <TextBlock.ContextMenu>
+                        <ContextMenu Style="{StaticResource DarkContextMenu}">
+                            <MenuItem Header="⎘  Copy OVML"
+                                      Style="{StaticResource DarkMenuItem}"
+                                      Click="OvmlCopy_Click"/>
+                        </ContextMenu>
+                    </TextBlock.ContextMenu>
+                </TextBlock>
+            </Border>
+
+            <!-- ── Action buttons ── -->
+            <Border BorderBrush="{StaticResource BorderSubtleBrush}"
+                    BorderThickness="0,1,0,0" Padding="0,14,0,0">
+                <UniformGrid Rows="1" Columns="4">
+
+                    <Button Content="✕  Reject"
+                            Style="{StaticResource TradingButton}"
+                            Template="{StaticResource RejectButtonTemplate}"
+                            Background="{StaticResource NegativeRedDimBrush}"
+                            BorderBrush="{StaticResource NegativeRedSemiBrush}"
+                            BorderThickness="1"
+                            Foreground="{StaticResource NegativeRedTextBrush}"
+                            Click="Reject_Click" Margin="0,0,6,0"
+                            ToolTip="Dismiss this request (Esc)"/>
+
+                    <Button x:Name="PopulateButton"
+                            Content="✓  Fill Form"
+                            Style="{StaticResource TradingButton}"
+                            Template="{StaticResource DialogButtonTemplate}"
+                            Background="Transparent"
+                            BorderBrush="{StaticResource BorderDefaultBrush}"
+                            BorderThickness="1"
+                            Foreground="{StaticResource TextSecondaryBrush}"
+                            Click="Populate_Click" Margin="0,0,6,0"
+                            ToolTip="Fill the trade form with parsed legs"/>
+
+                    <Button x:Name="BloombergButton"
+                            Content="📊  Bloomberg"
+                            Style="{StaticResource TradingButton}"
+                            Template="{StaticResource DialogButtonTemplate}"
+                            Background="Transparent"
+                            BorderBrush="{StaticResource BorderDefaultBrush}"
+                            BorderThickness="1"
+                            Foreground="{StaticResource TextSecondaryBrush}"
+                            Click="Bloomberg_Click" Margin="0,0,6,0"
+                            ToolTip="Open in Bloomberg Pricer only"/>
+
+                    <Button x:Name="BothButton"
+                            Content="⚡  Fill &amp; Price"
+                            Style="{StaticResource TradingButton}"
+                            Template="{StaticResource BothButtonTemplate}"
+                            Background="{StaticResource AccentBlueDimBrush}"
+                            BorderBrush="{StaticResource AccentBlueSemiBrush}"
+                            BorderThickness="1"
+                            Foreground="{StaticResource AccentBlueTextBrush}"
+                            Padding="16,10" FontSize="13"
+                            Click="Both_Click"
+                            ToolTip="Fill the trade form and open in Bloomberg Pricer"/>
+                </UniformGrid>
+            </Border>
+
+        </StackPanel>
+    </Border>
+</Window>

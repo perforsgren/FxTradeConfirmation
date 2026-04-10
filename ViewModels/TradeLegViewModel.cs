@@ -2,15 +2,15 @@
 using CommunityToolkit.Mvvm.Input;
 using FxTradeConfirmation.Helpers;
 using FxTradeConfirmation.Models;
-using System.ComponentModel;
-using System.Security.Cryptography;
-using System.Windows.Controls;
+using FxTradeConfirmation.Services;
+using System.Globalization;
 
 namespace FxTradeConfirmation.ViewModels;
 
 public partial class TradeLegViewModel : ObservableObject
 {
     private readonly MainViewModel _parent;
+    private const string Tag = nameof(TradeLegViewModel);
 
     /// <summary>Expected format for ExecutionTime: yyyyMMdd HH:mm:ss.fff (UTC).</summary>
     public const string ExecutionTimeFormat = "yyyyMMdd HH:mm:ss.fff";
@@ -29,6 +29,7 @@ public partial class TradeLegViewModel : ObservableObject
     // Option fields
     [ObservableProperty] private string _counterpart = string.Empty;
     [ObservableProperty] private string _currencyPair = "EURSEK";
+    private string _lastValidCurrencyPair = "EURSEK";
     [ObservableProperty] private BuySell _buySell = BuySell.Buy;
     [ObservableProperty] private CallPut _callPut = CallPut.Call;
     [ObservableProperty] private string _strikeText = string.Empty;
@@ -80,6 +81,15 @@ public partial class TradeLegViewModel : ObservableObject
     // Validation
     [ObservableProperty] private bool _hasValidationError;
 
+    /// <summary>True when the resolved expiry date falls on a Saturday or Sunday.</summary>
+    [ObservableProperty] private bool _expiryIsWeekend;
+
+    /// <summary>True when the resolved expiry date falls on a local market holiday (not a weekend).</summary>
+    [ObservableProperty] private bool _expiryIsHoliday;
+
+    /// <summary>Tooltip text describing the holiday(s) when <see cref="ExpiryIsHoliday"/> is true.</summary>
+    [ObservableProperty] private string _expiryWarningTooltip = string.Empty;
+
     /// <summary>
     /// The raw expiry input text shown in the TextBox. User types tenor or date here.
     /// On LostFocus, ApplyExpiryInput() is called which parses it and sets ExpiryDate/SettlementDate.
@@ -110,7 +120,7 @@ public partial class TradeLegViewModel : ObservableObject
     /// <summary>Last valid parsed premium amount. Used to revert PremiumAmountText on invalid input.</summary>
     private decimal? _lastValidPremiumAmount;
 
-    /// <summary>Number of decimal places the user entered for premium amount (only set when > 2).</summary>
+    /// <summary>Number of decimal places the user entered for premium amount (only when > 2).</summary>
     private int? _userPremiumAmountDecimals;
 
     /// <summary>Number of decimal places the user entered for notional (only when result has fraction).</summary>
@@ -194,8 +204,17 @@ public partial class TradeLegViewModel : ObservableObject
     public decimal? Notional => NotionalParser.Parse(NotionalText);
     public decimal? Premium => decimal.TryParse(PremiumText, System.Globalization.NumberStyles.Any,
         System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
-    public decimal? PremiumAmount => decimal.TryParse(PremiumAmountText, System.Globalization.NumberStyles.Any,
-        System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+    public decimal? PremiumAmount
+    {
+        get
+        {
+            if (!decimal.TryParse(PremiumAmountText, System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var v))
+                return null;
+            // Always return correctly signed value regardless of what the user typed.
+            return PremiumCalculator.ApplySign(Math.Abs(v), BuySell);
+        }
+    }
     public decimal? HedgeNotional => NotionalParser.Parse(HedgeNotionalText);
     public decimal? HedgeRate => decimal.TryParse(HedgeRateText, System.Globalization.NumberStyles.Any,
         System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
@@ -207,10 +226,47 @@ public partial class TradeLegViewModel : ObservableObject
     {
         if (IsFirstLeg)
             _parent.PropagateFromLeg1(nameof(Counterpart), value);
+        _parent.UpdateSaveValidation();
     }
 
     partial void OnCurrencyPairChanged(string value)
     {
+        // ── Normalise: strip slash, uppercase ────────────────────────────────
+        var normalized = value.Replace("/", string.Empty).ToUpperInvariant();
+
+        if (normalized != value)
+        {
+            if (normalized.Length == 6)
+            {
+                var knownPairs = _parent.ReferenceData.CurrencyPairs;
+                if (knownPairs.Count == 0 ||
+                    _parent.ReferenceData.CurrencyPairSet.Contains(normalized))
+                {
+                    CurrencyPair = normalized;
+                    return;
+                }
+            }
+            CurrencyPair = _lastValidCurrencyPair;
+            return;
+        }
+
+        // ── Reject unknown pairs (when list is populated) ────────────────────
+        if (normalized.Length == 6)
+        {
+            var knownPairs = _parent.ReferenceData.CurrencyPairs;
+            if (knownPairs.Count > 0 &&
+                !_parent.ReferenceData.CurrencyPairSet.Contains(normalized))
+            {
+                _parent.NotifyInvalidCurrencyPair(normalized);
+                CurrencyPair = _lastValidCurrencyPair;
+                return;
+            }
+        }
+
+        // ── Value is valid — commit ──────────────────────────────────────────
+        _lastValidCurrencyPair = normalized;
+
+        // ── Normal change handling ────────────────────────────────────────────
         if (value.Length >= 6)
         {
             NotionalCurrency = BaseCurrency;
@@ -228,13 +284,9 @@ public partial class TradeLegViewModel : ObservableObject
             if (_lastValidStrike.HasValue)
                 StrikeText = FormatStrike(_lastValidStrike.Value);
 
-            // Re-format hedge rate when currency pair changes (JPY threshold may change)
             if (_lastValidHedgeRate.HasValue)
                 HedgeRateText = FormatStrike(_lastValidHedgeRate.Value);
 
-            // Refresh ExecutionTime when currency pair changes.
-            // Only generate a new timestamp on Leg 1 — other legs receive it
-            // via PropagateFromLeg1 so all legs share the exact same value.
             if (IsFirstLeg)
             {
                 var newTime = DateTime.UtcNow.ToString(ExecutionTimeFormat);
@@ -275,6 +327,13 @@ public partial class TradeLegViewModel : ObservableObject
         OnPropertyChanged(nameof(Strike));
         OnPropertyChanged(nameof(PremiumInputEnabled));
         RecalculatePremiumFromPremiumText();
+        _parent.UpdateSaveValidation();
+    }
+
+    partial void OnExpiryDateChanged(DateTime? value)
+    {
+        ValidateExpiryDate();
+        _parent.UpdateSaveValidation();
     }
 
     partial void OnNotionalTextChanged(string value)
@@ -338,6 +397,23 @@ public partial class TradeLegViewModel : ObservableObject
         _parent.NotifyLegChanged();
     }
 
+    partial void OnHedgeNotionalTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HedgeNotional));
+        _parent.UpdateSaveValidation();
+    }
+
+    partial void OnHedgeRateTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HedgeRate));
+        _parent.UpdateSaveValidation();
+    }
+
+    partial void OnHedgeSettlementDateChanged(DateTime? value)
+    {
+        _parent.UpdateSaveValidation();
+    }
+
     partial void OnMicChanged(string value)
     {
         var broker = MicBrokerMapping.GetBrokerFromMic(value);
@@ -355,34 +431,42 @@ public partial class TradeLegViewModel : ObservableObject
     {
         if (_isSyncingUserProfile) return;
         _isSyncingUserProfile = true;
-
-        var refData = _parent.ReferenceData;
-        if (!string.IsNullOrEmpty(value) && refData.FullNameToUserId.TryGetValue(value, out var userId))
+        try
         {
-            InvestmentDecisionID = userId;
+            var refData = _parent.ReferenceData;
+            if (!string.IsNullOrEmpty(value) && refData.FullNameToUserId.TryGetValue(value, out var userId))
+            {
+                InvestmentDecisionID = userId;
 
-            if (refData.UserIdToReportingEntity.TryGetValue(userId, out var reporting))
-                ReportingEntity = reporting;
+                if (refData.UserIdToReportingEntity.TryGetValue(userId, out var reporting))
+                    ReportingEntity = reporting;
+            }
         }
-
-        _isSyncingUserProfile = false;
+        finally
+        {
+            _isSyncingUserProfile = false;
+        }
     }
 
     partial void OnInvestmentDecisionIDChanged(string value)
     {
         if (_isSyncingUserProfile) return;
         _isSyncingUserProfile = true;
-
-        var refData = _parent.ReferenceData;
-        if (!string.IsNullOrEmpty(value) && refData.UserIdToFullName.TryGetValue(value, out var fullName))
+        try
         {
-            Sales = fullName;
+            var refData = _parent.ReferenceData;
+            if (!string.IsNullOrEmpty(value) && refData.UserIdToFullName.TryGetValue(value, out var fullName))
+            {
+                Sales = fullName;
 
-            if (refData.UserIdToReportingEntity.TryGetValue(value, out var reporting))
-                ReportingEntity = reporting;
+                if (refData.UserIdToReportingEntity.TryGetValue(value, out var reporting))
+                    ReportingEntity = reporting;
+            }
         }
-
-        _isSyncingUserProfile = false;
+        finally
+        {
+            _isSyncingUserProfile = false;
+        }
     }
 
     // --- Premium Calculation Helpers ---
@@ -397,15 +481,21 @@ public partial class TradeLegViewModel : ObservableObject
         if (_isRecalculating || IsPremiumLocked) return;
         if (!Premium.HasValue || !Notional.HasValue) return;
 
-        var amount = PremiumCalculator.CalculateAmount(Premium, Notional, PremiumStyle, Strike);
+        var amount = PremiumCalculator.CalculateAmount(Premium, Notional, PremiumStyle, Strike, CurrencyPair);
         if (amount.HasValue)
         {
             _isRecalculating = true;
-            var signed = PremiumCalculator.ApplySign(amount.Value, BuySell);
-            _lastValidPremiumAmount = signed;
-            int decimals = _userPremiumAmountDecimals ?? 2;
-            SetProperty(ref _premiumAmountText, FormatPremiumAmount(signed, decimals), nameof(PremiumAmountText));
-            _isRecalculating = false;
+            try
+            {
+                var signed = PremiumCalculator.ApplySign(amount.Value, BuySell);
+                _lastValidPremiumAmount = signed;
+                int decimals = _userPremiumAmountDecimals ?? 2;
+                SetProperty(ref _premiumAmountText, FormatPremiumAmount(signed, decimals), nameof(PremiumAmountText));
+            }
+            finally
+            {
+                _isRecalculating = false;
+            }
         }
     }
 
@@ -414,14 +504,22 @@ public partial class TradeLegViewModel : ObservableObject
         if (_isRecalculating || IsPremiumLocked) return;
         if (!PremiumAmount.HasValue || !Notional.HasValue) return;
 
-        var prem = PremiumCalculator.CalculatePremium(PremiumAmount, Notional, PremiumStyle, Strike);
+        // Use absolute amount so Premium is always a positive price, never a signed cash flow.
+        var absAmount = Math.Abs(PremiumAmount.Value);
+        var prem = PremiumCalculator.CalculatePremium(absAmount, Notional, PremiumStyle, Strike, CurrencyPair);
         if (prem.HasValue)
         {
             _isRecalculating = true;
-            _lastValidPremium = prem.Value;
-            int decimals = _userPremiumDecimals ?? PremiumDefaultDecimals;
-            SetProperty(ref _premiumText, FormatPremium(prem.Value, decimals), nameof(PremiumText));
-            _isRecalculating = false;
+            try
+            {
+                _lastValidPremium = prem.Value;
+                int decimals = _userPremiumDecimals ?? PremiumDefaultDecimals;
+                SetProperty(ref _premiumText, FormatPremium(prem.Value, decimals), nameof(PremiumText));
+            }
+            finally
+            {
+                _isRecalculating = false;
+            }
         }
     }
 
@@ -622,6 +720,9 @@ public partial class TradeLegViewModel : ObservableObject
             _lastValidPremium = null;
             _userPremiumDecimals = null;
             PremiumText = string.Empty;
+            _lastValidPremiumAmount = null;
+            _userPremiumAmountDecimals = null;
+            PremiumAmountText = string.Empty;
             return;
         }
 
@@ -630,6 +731,8 @@ public partial class TradeLegViewModel : ObservableObject
         if (decimal.TryParse(normalized, System.Globalization.NumberStyles.Any,
                 System.Globalization.CultureInfo.InvariantCulture, out var value))
         {
+            // Premium is always a positive price — ignore any sign the user typed.
+            value = Math.Abs(value);
             _lastValidPremium = value;
 
             int dotIndex = normalized.IndexOf('.');
@@ -644,7 +747,13 @@ public partial class TradeLegViewModel : ObservableObject
             if (_lastValidPremium.HasValue)
                 PremiumText = FormatPremium(_lastValidPremium.Value, _userPremiumDecimals ?? PremiumDefaultDecimals);
             else
+            {
+                // Invalid input and no prior valid premium — clear both fields so they stay in sync.
                 PremiumText = string.Empty;
+                _lastValidPremiumAmount = null;
+                _userPremiumAmountDecimals = null;
+                PremiumAmountText = string.Empty;
+            }
         }
     }
 
@@ -655,27 +764,38 @@ public partial class TradeLegViewModel : ObservableObject
             _lastValidPremiumAmount = null;
             _userPremiumAmountDecimals = null;
             PremiumAmountText = string.Empty;
+            _lastValidPremium = null;
+            _userPremiumDecimals = null;
+            PremiumText = string.Empty;
             return;
         }
 
         var parsed = NotionalParser.Parse(input);
         if (parsed.HasValue)
         {
-            _lastValidPremiumAmount = parsed.Value;
+            // Normalize sign according to Buy/Sell — user must not be able to force wrong direction.
+            var signed = PremiumCalculator.ApplySign(Math.Abs(parsed.Value), BuySell);
+            _lastValidPremiumAmount = signed;
 
             var expandedDecimals = NotionalParser.CountInputDecimals(input);
             int userDecimals = expandedDecimals ?? 0;
             _userPremiumAmountDecimals = userDecimals > 2 ? userDecimals : null;
 
             int decimals = Math.Max(userDecimals, 2);
-            PremiumAmountText = FormatPremiumAmount(parsed.Value, decimals);
+            PremiumAmountText = FormatPremiumAmount(signed, decimals);
         }
         else
         {
             if (_lastValidPremiumAmount.HasValue)
                 PremiumAmountText = FormatPremiumAmount(_lastValidPremiumAmount.Value, _userPremiumAmountDecimals ?? 2);
             else
+            {
+                // Invalid input and no prior valid premium amount — clear both fields so they stay in sync.
                 PremiumAmountText = string.Empty;
+                _lastValidPremium = null;
+                _userPremiumDecimals = null;
+                PremiumText = string.Empty;
+            }
         }
     }
 
@@ -686,6 +806,15 @@ public partial class TradeLegViewModel : ObservableObject
         => value.ToString($"N{decimals}", System.Globalization.CultureInfo.InvariantCulture);
 
     // --- Expiry Date Input Handling ---
+
+    /// <summary>
+    /// Raised when a parsed expiry date lands on a weekend.
+    /// The subscriber (view) should show a roll dialog and call
+    /// <see cref="ApplyExpiryDateDirect"/> with the chosen date,
+    /// or do nothing to keep the weekend date as-is.
+    /// Parameter: the leg itself so a single handler can serve all legs.
+    /// </summary>
+    public event Action<TradeLegViewModel>? WeekendExpiryDetected;
 
     public void ApplyExpiryInput(string input)
     {
@@ -706,11 +835,100 @@ public partial class TradeLegViewModel : ObservableObject
                 : convention.DeliveryDate;
 
             RecalculateHedgeSettlementDate();
+
+            // ValidateExpiryDate is called by OnExpiryDateChanged, but only
+            // when the property value actually changes. Force it here so that
+            // re-entering the same date (e.g. after a currency pair change) still
+            // refreshes the weekend/holiday flags.
+            ValidateExpiryDate();
+
+            if (ExpiryIsWeekend)
+                WeekendExpiryDetected?.Invoke(this);
         }
         else
         {
             ExpiryText = ExpiryDate.HasValue
                 ? ExpiryDate.Value.ToString("yyyy-MM-dd")
+                : string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Applies a pre-resolved expiry date directly, bypassing the convention
+    /// engine. Use this when rolling a weekend date so that the rolled date is
+    /// not re-processed through <see cref="ExpiryDateParser"/> (which would
+    /// treat it as a delivery horizon and shift it further).
+    /// Settlement date is recomputed correctly for the new expiry.
+    /// </summary>
+    public void ApplyExpiryDateDirect(DateTime expiryDate)
+    {
+        ExpiryDate = expiryDate;
+        ExpiryText = expiryDate.ToString("yyyy-MM-dd");
+
+        // Recompute delivery/settlement for the rolled expiry.
+        if (CurrencyPair.Length >= 6)
+        {
+            try
+            {
+                var dc = new DateConvention(CurrencyPair, _parent.Holidays);
+                var delivery = dc.getForwardDate(expiryDate, dc.TAdd);
+                SettlementDate = delivery;
+
+                PremiumDate = PremiumDateType == PremiumDateType.Spot
+                    ? (_cachedSpotDate ?? dc.getForwardDate(DateTime.Today, dc.TAdd))
+                    : delivery;
+            }
+            catch (Exception ex)
+            {
+                // Date convention failed — settlement date is left unchanged.
+                FileLogger.Instance?.Warn(Tag,
+                    $"DateConvention failed for {CurrencyPair} / {expiryDate:yyyy-MM-dd}: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        RecalculateHedgeSettlementDate();
+        ValidateExpiryDate();
+    }
+
+    /// <summary>
+    /// Evaluates the current <see cref="ExpiryDate"/> against weekend and
+    /// local-market holiday calendars and sets the <see cref="ExpiryIsWeekend"/>,
+    /// <see cref="ExpiryIsHoliday"/> and <see cref="ExpiryWarningTooltip"/>
+    /// flags accordingly. Called every time the expiry date changes so that
+    /// visual warnings are cleared when the user enters a valid business day.
+    /// </summary>
+    public void ValidateExpiryDate()
+    {
+        if (!ExpiryDate.HasValue)
+        {
+            ExpiryIsWeekend = false;
+            ExpiryIsHoliday = false;
+            ExpiryWarningTooltip = string.Empty;
+            return;
+        }
+
+        var date = ExpiryDate.Value;
+
+        ExpiryIsWeekend = Helpers.Calendar.IsWeekend(date);
+
+        if (!ExpiryIsWeekend && CurrencyPair.Length >= 6 && _parent.Holidays.Rows.Count > 0)
+        {
+            var markets = DateConvention.ctryNames(CurrencyPair)
+                                        .Where(m => !string.IsNullOrEmpty(m));
+
+            var (isHoliday, description) = Helpers.Calendar.IsMarketHoliday(
+                date, _parent.Holidays, markets);
+
+            ExpiryIsHoliday = isHoliday;
+            ExpiryWarningTooltip = isHoliday
+                ? $"Local holiday: {description}"
+                : string.Empty;
+        }
+        else
+        {
+            ExpiryIsHoliday = false;
+            ExpiryWarningTooltip = ExpiryIsWeekend
+                ? $"{date.ToString("dddd", CultureInfo.InvariantCulture)} — weekend"
                 : string.Empty;
         }
     }
@@ -729,19 +947,17 @@ public partial class TradeLegViewModel : ObservableObject
             return;
         }
 
-        if (Hedge == HedgeType.Spot && CurrencyPair.Length >= 6 && _parent.Holidays.Rows.Count >= 0)
+        if (Hedge == HedgeType.Spot && CurrencyPair.Length >= 6 && _parent.Holidays.Rows.Count > 0)
         {
             try
             {
                 var dc = new DateConvention(CurrencyPair, _parent.Holidays);
-                var spotDate = dc.getForwardDate(DateTime.Today,
-                    CurrencyPair.Replace("/", "") is "USDCAD" or "USDTRY" or "USDPHP"
-                        or "USDRUB" or "USDKZT" or "USDPKR" ? 1 : 2);
-                HedgeSettlementDate = spotDate;
+                HedgeSettlementDate = dc.GetConvention("1D").SpotDate;
             }
-            catch
+            catch (Exception ex)
             {
                 HedgeSettlementDate = null;
+                _parent.StatusMessage = $"⚠ Could not calculate hedge settlement date: {ex.Message}";
             }
         }
     }
@@ -773,8 +989,27 @@ public partial class TradeLegViewModel : ObservableObject
         _isRecalculating = false;
     }
 
+    /// <summary>
+    /// Captures the current premium tracking state before solving begins so that
+    /// <see cref="RestorePreSolveValues"/> can fully recover precision metadata on cancel.
+    /// </summary>
+    public void SavePreSolveValues()
+    {
+        _preSolvePremiumText = _premiumText;
+        _preSolvePremiumAmountText = _premiumAmountText;
+        _preSolveLastValidPremium = _lastValidPremium;
+        _preSolveUserPremiumDecimals = _userPremiumDecimals;
+        _preSolveLastValidPremiumAmount = _lastValidPremiumAmount;
+        _preSolveUserPremiumAmountDecimals = _userPremiumAmountDecimals;
+    }
+
     public void RestorePreSolveValues()
     {
+        _lastValidPremium = _preSolveLastValidPremium;
+        _userPremiumDecimals = _preSolveUserPremiumDecimals;
+        _lastValidPremiumAmount = _preSolveLastValidPremiumAmount;
+        _userPremiumAmountDecimals = _preSolveUserPremiumAmountDecimals;
+
         if (_preSolvePremiumText != null)
         {
             ApplyPremiumInput(_preSolvePremiumText);
@@ -853,7 +1088,10 @@ public partial class TradeLegViewModel : ObservableObject
                         or "USDRUB" or "USDKZT" or "USDPKR" ? 1 : 2;
                     PremiumDate = dc.getForwardDate(DateTime.Today, tAdd);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _parent.StatusMessage = $"⚠ Could not calculate spot premium date: {ex.Message}";
+                }
             }
         }
         else
@@ -881,8 +1119,20 @@ public partial class TradeLegViewModel : ObservableObject
 
     private async Task LoadPortfolioAsync(string currencyPair)
     {
+        // ── Fast path: use the already-loaded in-memory lookup ───────────
+        // CurrencyToPortfolio is populated from the same DB table as the live
+        // query below; using it avoids a DB round-trip and any timing races.
+        var refData = _parent.ReferenceData;
+        if (refData.CurrencyToPortfolio.TryGetValue(currencyPair, out var cached) &&
+            !string.IsNullOrEmpty(cached))
+        {
+            PortfolioMX3 = cached;
+            return;
+        }
+
+        // ── Slow path: live DB query (e.g. pair added after startup) ─────
         var portfolio = await _parent.DatabaseService.GetPortfolioForCurrencyPairAsync(currencyPair);
-        PortfolioMX3 = portfolio ?? string.Empty;
+        PortfolioMX3 = !string.IsNullOrEmpty(portfolio) ? portfolio : "MAJORS";
     }
 
     public async Task LoadPortfolioForCurrentPairAsync()
@@ -964,6 +1214,163 @@ public partial class TradeLegViewModel : ObservableObject
         _lastValidExecutionTime = source._lastValidExecutionTime;
         Mic = source.Mic;
         Broker = source.Broker;
+        BookCalypso = source.BookCalypso;
         _cachedSpotDate = source._cachedSpotDate;
     }
+
+    public void LoadFromModel(TradeLeg model)
+    {
+        Counterpart = model.Counterpart;
+        CurrencyPair = model.CurrencyPair;
+        BuySell = model.BuySell;
+        CallPut = model.CallPut;
+
+        if (model.Strike.HasValue)
+            ApplyStrikeInput(model.Strike.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        if (model.ExpiryDate.HasValue)
+        {
+            ExpiryDate = model.ExpiryDate;
+            ExpiryText = model.ExpiryDate.Value.ToString("yyyy-MM-dd");
+        }
+
+        SettlementDate = model.SettlementDate;
+        Cut = model.Cut;
+
+        if (model.Notional.HasValue)
+            ApplyNotionalInput(model.Notional.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        NotionalCurrency = model.NotionalCurrency;
+        PremiumCurrency = model.PremiumCurrency;
+
+        // Set PremiumDateType and PremiumDate before applying premium values,
+        // but set PremiumStyle AFTER Premium so that OnPremiumStyleChanged fires
+        // with Premium already populated — avoids a no-op recalculation mid-load.
+        PremiumDateType = model.PremiumDateType;
+        PremiumDate = model.PremiumDate;
+
+        if (model.Premium.HasValue)
+            ApplyPremiumInput(model.Premium.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        if (model.PremiumAmount.HasValue)
+            ApplyPremiumAmountInput(model.PremiumAmount.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
+
+        // Apply PremiumStyle last so OnPremiumStyleChanged recalculates with
+        // PremiumText already set — correct ordering, not just a no-op guard.
+        PremiumStyle = model.PremiumStyle;
+
+        PortfolioMX3 = model.PortfolioMX3;
+        Trader = model.Trader;
+        ExecutionTime = model.ExecutionTime;
+        Mic = model.MIC;
+        Tvtic = model.TVTIC;
+        Isin = model.ISIN;
+        Sales = model.Sales;
+        InvestmentDecisionID = model.InvestmentDecisionID;
+        Broker = model.Broker;
+        ReportingEntity = model.ReportingEntity;
+
+        if (model.Margin.HasValue)
+            MarginText = model.Margin.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture);
+
+        // Hedge fields
+        Hedge = model.Hedge;
+        HedgeBuySell = model.HedgeBuySell;
+
+        if (model.HedgeNotional.HasValue)
+            ApplyHedgeNotionalInput(model.HedgeNotional.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        HedgeNotionalCurrency = model.HedgeNotionalCurrency;
+
+        if (model.HedgeRate.HasValue)
+            ApplyHedgeRateInput(model.HedgeRate.Value.ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
+
+        HedgeSettlementDate = model.HedgeSettlementDate;
+        HedgeTVTIC = model.HedgeTVTIC;
+        HedgeUTI = model.HedgeUTI;
+        HedgeISIN = model.HedgeISIN;
+        BookCalypso = model.BookCalypso;
+    }
+
+    /// <summary>
+    /// Populates this leg from a parsed <see cref="OvmlLeg"/>.
+    /// Only fields that the parser can reliably produce are set;
+    /// admin fields (Trader, Sales, etc.) are left at their defaults.
+    /// </summary>
+    public void ApplyFromOvmlLeg(OvmlLeg leg)
+    {
+        // Currency pair
+        if (!string.IsNullOrWhiteSpace(leg.Pair) &&
+            !leg.Pair.Equals("UNKNOWN", StringComparison.OrdinalIgnoreCase))
+        {
+            var newPair = leg.Pair.ToUpperInvariant();
+            CurrencyPair = newPair;
+
+            // OnCurrencyPairChanged is skipped by CommunityToolkit when the value
+            // equals the current default ("EURSEK"). Force the portfolio lookup so
+            // PortfolioMX3 is always populated after a parse, regardless of whether
+            // the pair actually changed.
+            _ = LoadPortfolioAsync(newPair);
+        }
+
+        // Buy / Sell — default to Buy if the parser returned null or empty
+        BuySell = leg.BuySell?.StartsWith("S", StringComparison.OrdinalIgnoreCase) == true
+            ? BuySell.Sell
+            : BuySell.Buy;
+
+        // Call / Put — default to Call if the parser returned null or empty
+        CallPut = leg.PutCall?.StartsWith("P", StringComparison.OrdinalIgnoreCase) == true
+            ? CallPut.Put
+            : CallPut.Call;
+
+        // Strike — "ATM" or numeric
+        if (!string.IsNullOrWhiteSpace(leg.Strike))
+            ApplyStrikeInput(leg.Strike.Equals("ATM", StringComparison.OrdinalIgnoreCase)
+                ? string.Empty   // leave blank — no numeric strike for ATM
+                : leg.Strike);
+
+        // Notional — stored as absolute (e.g. 25_000_000); NotionalParser.Format handles display
+        if (leg.Notional > 0)
+        {
+            var notionalDecimal = (decimal)leg.Notional;
+            _lastValidNotional = notionalDecimal;
+            _userNotionalDecimals = null;
+            NotionalText = NotionalParser.Format(notionalDecimal, null);
+        }
+
+        // Expiry — try to parse as date first, then fall back to tenor
+        if (!string.IsNullOrWhiteSpace(leg.Expiry))
+            ApplyExpiryInput(leg.Expiry);
+    }
+
+    /// <summary>
+    /// Converts the current UI state of this leg back to an <see cref="OvmlLeg"/>
+    /// suitable for OVML generation via <see cref="OvmlBuilderAP3.RebuildOvml"/>.
+    /// </summary>
+    public OvmlLeg ToOvmlLeg()
+    {
+        var pair = CurrencyPair.Replace("/", string.Empty).ToUpperInvariant();
+        var buySell = BuySell == BuySell.Sell ? "Sell" : "Buy";
+        var putCall = CallPut == CallPut.Put ? "Put" : "Call";
+
+        // Strike: use the raw text so delta strikes ("25D") are preserved
+        var strike = StrikeText;
+
+        // Notional: convert from decimal to the long (absolute) format expected by OvmlLeg
+        var notional = Notional.HasValue ? (long)Math.Abs(Notional.Value) : 0L;
+
+        // Expiry: format as yyyy-MM-dd (the format RebuildOvml normalises to MM/dd/yy)
+        var expiry = ExpiryDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty;
+
+        // Spot: not stored per-leg in the UI — pass empty; RebuildOvml will omit SP if blank
+        var spot = string.Empty;
+
+        return new OvmlLeg(pair, buySell, putCall, strike, notional, expiry, spot);
+    }
+
+    /// <summary>
+    /// Returns the sign prefix ("-" for Buy, "" for Sell) to pre-fill
+    /// the Premium Amount TextBox when it receives focus.
+    /// </summary>
+    public string PremiumAmountSignPrefix => BuySell == BuySell.Buy ? "-" : "";
 }

@@ -313,7 +313,7 @@
                           ItemsSource="{Binding DataContext.ReferenceData.ReportingEntities,
                               RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                           Margin="0,0,0,6"/>
-                
+
             </StackPanel>
 
             <!-- === HEDGE SECTION === -->

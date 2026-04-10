@@ -5,11 +5,11 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d">
 
-    <Grid x:Name="RootGrid" Margin="0">
-        <!-- Columns are built dynamically in code-behind:
+	<Grid x:Name="RootGrid" Margin="0">
+		<!-- Columns are built dynamically in code-behind:
              Col 0 = Row labels
              Col 1 = Distributor inputs
              Col 2..N = One per Leg (each with header + add/remove buttons)
         -->
-    </Grid>
+	</Grid>
 </UserControl>

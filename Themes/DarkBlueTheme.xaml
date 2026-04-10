@@ -20,18 +20,29 @@
     <Color x:Key="AccentBlue">#FF3B82F6</Color>
     <Color x:Key="AccentBlueDark">#FF2563EB</Color>
     <Color x:Key="AccentBlueGlow">#443B82F6</Color>
+    <Color x:Key="AccentBlueDim">#223B82F6</Color>
+    <Color x:Key="AccentBlueSemi">#993B82F6</Color>
+    <Color x:Key="AccentBluePress">#663B82F6</Color>
+    <Color x:Key="AccentBlueText">#FF93B4F8</Color>
     <Color x:Key="AccentBlueMuted">#FF1E3A6E</Color>
 
     <!-- Semantic -->
     <Color x:Key="PositiveGreen">#FF10B981</Color>
     <Color x:Key="PositiveGreenDark">#FF065F46</Color>
     <Color x:Key="NegativeRed">#FFEF4444</Color>
+    <Color x:Key="NegativeRedDim">#22EF4444</Color>
+    <Color x:Key="NegativeRedSemi">#99EF4444</Color>
+    <Color x:Key="NegativeRedGlow">#44EF4444</Color>
+    <Color x:Key="NegativeRedPress">#66EF4444</Color>
+    <Color x:Key="NegativeRedText">#FFEF9090</Color>
     <Color x:Key="NegativeRedDark">#FF7F1D1D</Color>
     <Color x:Key="WarningAmber">#FFF59E0B</Color>
     <Color x:Key="SolvingGreen">#FF22C55E</Color>
     <Color x:Key="NeutralGray">#FF94A3B8</Color>
     <Color x:Key="SolvingAmber">#FFFBBF24</Color>
     <Color x:Key="SolvingAmberDim">#33FBBF24</Color>
+    <Color x:Key="PutPurpleDark">#FF4A1D5A</Color>
+    <Color x:Key="UnknownGray">#FF444444</Color>
 
     <!-- Text -->
     <Color x:Key="TextPrimary">#FFE2E8F0</Color>
@@ -61,18 +72,31 @@
     <SolidColorBrush x:Key="BgReadOnlyBrush" Color="{StaticResource BgReadOnly}"/>
     <SolidColorBrush x:Key="BgSectionHeaderBrush" Color="{StaticResource BgSectionHeader}"/>
 
-    <SolidColorBrush x:Key="AccentBlueBrush" Color="{StaticResource AccentBlue}"/>
-    <SolidColorBrush x:Key="AccentBlueDarkBrush" Color="{StaticResource AccentBlueDark}"/>
-    <SolidColorBrush x:Key="AccentBlueMutedBrush" Color="{StaticResource AccentBlueMuted}"/>
+    <SolidColorBrush x:Key="AccentBlueBrush"      Color="{StaticResource AccentBlue}"/>
+    <SolidColorBrush x:Key="AccentBlueDarkBrush"   Color="{StaticResource AccentBlueDark}"/>
+    <SolidColorBrush x:Key="AccentBlueGlowBrush"   Color="{StaticResource AccentBlueGlow}"/>
+    <SolidColorBrush x:Key="AccentBlueDimBrush"    Color="{StaticResource AccentBlueDim}"/>
+    <SolidColorBrush x:Key="AccentBlueSemiBrush"   Color="{StaticResource AccentBlueSemi}"/>
+    <SolidColorBrush x:Key="AccentBluePressBrush"  Color="{StaticResource AccentBluePress}"/>
+    <SolidColorBrush x:Key="AccentBlueTextBrush"   Color="{StaticResource AccentBlueText}"/>
+    <SolidColorBrush x:Key="AccentBlueMutedBrush"  Color="{StaticResource AccentBlueMuted}"/>
 
-    <SolidColorBrush x:Key="PositiveGreenBrush" Color="{StaticResource PositiveGreen}"/>
+    <SolidColorBrush x:Key="PositiveGreenBrush"     Color="{StaticResource PositiveGreen}"/>
     <SolidColorBrush x:Key="PositiveGreenDarkBrush" Color="{StaticResource PositiveGreenDark}"/>
-    <SolidColorBrush x:Key="NegativeRedBrush" Color="{StaticResource NegativeRed}"/>
-    <SolidColorBrush x:Key="NegativeRedDarkBrush" Color="{StaticResource NegativeRedDark}"/>
-    <SolidColorBrush x:Key="WarningAmberBrush" Color="{StaticResource WarningAmber}"/>
-    <SolidColorBrush x:Key="SolvingGreenBrush" Color="{StaticResource SolvingGreen}"/>
-    <SolidColorBrush x:Key="SolvingAmberBrush" Color="{StaticResource SolvingAmber}"/>
-    <SolidColorBrush x:Key="SolvingAmberDimBrush" Color="{StaticResource SolvingAmberDim}"/>
+    <SolidColorBrush x:Key="NegativeRedBrush"       Color="{StaticResource NegativeRed}"/>
+    <SolidColorBrush x:Key="NegativeRedDimBrush"    Color="{StaticResource NegativeRedDim}"/>
+    <SolidColorBrush x:Key="NegativeRedSemiBrush"   Color="{StaticResource NegativeRedSemi}"/>
+    <SolidColorBrush x:Key="NegativeRedGlowBrush"   Color="{StaticResource NegativeRedGlow}"/>
+    <SolidColorBrush x:Key="NegativeRedPressBrush"  Color="{StaticResource NegativeRedPress}"/>
+    <SolidColorBrush x:Key="NegativeRedTextBrush"   Color="{StaticResource NegativeRedText}"/>
+    <SolidColorBrush x:Key="NegativeRedDarkBrush"   Color="{StaticResource NegativeRedDark}"/>
+    <SolidColorBrush x:Key="WarningAmberBrush"      Color="{StaticResource WarningAmber}"/>
+    <SolidColorBrush x:Key="SolvingGreenBrush"      Color="{StaticResource SolvingGreen}"/>
+    <SolidColorBrush x:Key="SolvingAmberBrush"      Color="{StaticResource SolvingAmber}"/>
+    <SolidColorBrush x:Key="SolvingAmberDimBrush"   Color="{StaticResource SolvingAmberDim}"/>
+    <SolidColorBrush x:Key="NeutralGrayBrush"       Color="{StaticResource NeutralGray}"/>
+    <SolidColorBrush x:Key="PutPurpleDarkBrush"     Color="{StaticResource PutPurpleDark}"/>
+    <SolidColorBrush x:Key="UnknownGrayBrush"       Color="{StaticResource UnknownGray}"/>
 
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
@@ -767,6 +791,15 @@
                             <Setter TargetName="border" Property="Background"
                                     Value="{StaticResource AccentBlueDarkBrush}"/>
                         </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource BgMediumBrush}"/>
+                            <Setter TargetName="border" Property="BorderBrush"
+                                    Value="{StaticResource BorderDefaultBrush}"/>
+                            <Setter Property="Foreground"
+                                    Value="{StaticResource TextDimmedBrush}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -1108,6 +1141,144 @@
                                     Value="{StaticResource AccentBlueDarkBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ==================== TOOLTIP (dark themed) ==================== -->
+
+    <!-- Global implicit style — applies to ALL ToolTips in the app -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{StaticResource BgDarkBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderDefaultBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="HasDropShadow" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#FF000000"
+                                               BlurRadius="12" ShadowDepth="4"
+                                               Opacity="0.4" Direction="270"/>
+                        </Border.Effect>
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Named variant (kept for explicit opt-in if needed) -->
+    <Style x:Key="DarkTooltip" TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}"/>
+
+    <!-- ==================== TOOLBAR DROPDOWN BUTTON ==================== -->
+    <!-- Chip-style button with a chevron that opens a ContextMenu on click -->
+    <Style x:Key="ToolbarDropdownButton" TargetType="Button" BasedOn="{StaticResource ToolbarButton}">
+        <Setter Property="Padding" Value="10,6,8,6"/>
+    </Style>
+
+    <!-- ==================== DARK CONTEXT MENU ==================== -->
+    <Style x:Key="DarkContextMenu" TargetType="ContextMenu">
+        <Setter Property="Background" Value="{StaticResource BgCardBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderDefaultBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Padding" Value="0,4"/>
+        <Setter Property="HasDropShadow" Value="True"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#FF000000"
+                                               BlurRadius="16" ShadowDepth="6"
+                                               Opacity="0.5" Direction="270"/>
+                        </Border.Effect>
+                        <StackPanel IsItemsHost="True"
+                                    KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Dark MenuItem -->
+    <Style x:Key="DarkMenuItem" TargetType="MenuItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource MainFont}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="border"
+                            Background="{TemplateBinding Background}"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter Grid.Column="0"
+                                              ContentSource="Header"
+                                              VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{TemplateBinding InputGestureText}"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="24,0,0,0"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="border" Property="Background"
+                                    Value="{StaticResource BgHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground"
+                                    Value="{StaticResource TextDimmedBrush}"/>
+                            <Setter Property="Cursor" Value="Arrow"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Dark ContextMenu Separator -->
+    <Style x:Key="DarkMenuSeparator" TargetType="Separator">
+        <Setter Property="Height" Value="1"/>
+        <Setter Property="Margin" Value="8,4"/>
+        <Setter Property="Background" Value="{StaticResource BorderSubtleBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Background="{TemplateBinding Background}"
+                            Height="{TemplateBinding Height}"
+                            Margin="{TemplateBinding Margin}"
+                            SnapsToDevicePixels="True"/>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

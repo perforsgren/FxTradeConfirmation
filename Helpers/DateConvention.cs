@@ -1,509 +1,381 @@
-﻿#region Namespaces
-using System;
-using System.IO;
-using System.Collections.Generic;
-using System.Collections;
-using System.ComponentModel;
-using System.Data;
-using System.Data.Sql;
-using System.Data.SqlClient;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml;
-using System.Xml.Linq;
-using System.Diagnostics;
-using System.Threading;
+﻿using System.Data;
 using System.Globalization;
-#endregion
 
-namespace FxTradeConfirmation.Helpers
+namespace FxTradeConfirmation.Helpers;
+
+public class Convention
 {
-    public class Convention
+    public DateTime SpotDate { get; set; }
+    public DateTime ExpiryDate { get; set; }
+    public DateTime DeliveryDate { get; set; }
+    public int Days { get; set; }
+}
+
+public class DateConvention
+{
+    // Replaced parallel arrays with a dictionary — eliminates index-coupling fragility
+    // and corrects the "Calender" typo. Keys are ISO currency codes; values are calendar names.
+    internal static readonly Dictionary<string, string> CurrencyToCalendar =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["EUR"] = "TARGET",
+            ["USD"] = "USA",
+            ["SEK"] = "SWEDEN",
+            ["NOK"] = "NORWAY",
+            ["GBP"] = "ENGLAND",
+            ["CAD"] = "CANADA",
+            ["CHF"] = "SWITZERLAND",
+            ["AUD"] = "AUSTRALIA",
+            ["RUB"] = "RUSSIA",
+            ["JPY"] = "JAPAN",
+            ["DKK"] = "DENMARK",
+            ["HKD"] = "HONGKONG",
+            ["SGD"] = "SINGAPORE",
+            ["TRY"] = "TURKEY",
+            ["PLN"] = "POLAND",
+            ["HUF"] = "HUNGARY",
+            ["CZK"] = "CZECHREPUBLIC",
+            ["NZD"] = "NEWZEALAND",
+        };
+
+    // Removed = new DataTable() initialiser — the constructor overwrites it immediately,
+    // so the allocation was wasted. Field is now null-initialised and always set in ctor.
+    private DataTable _holidays;
+    private string _ccy;
+    private int _tAdd;
+
+    // NOTE: _spotDate, _expiryDate, _deliveryDate, _days removed —
+    // they were written and read only within GetConvention, making
+    // them de-facto local variables stored as fields. Concurrent calls
+    // on a shared instance would corrupt each other's intermediate state.
+
+    private Calendar _calendar;
+
+    /// <summary>Cached USA calendar — avoids re-filtering the holidays DataTable on every call (Bug #3).</summary>
+    private Calendar _usaCalendar;
+
+    /// <summary>Cached non-US leg calendar — avoids re-filtering the holidays DataTable on every call (Bug #4).</summary>
+    private Calendar _nonUsCalendar;
+
+    /// <summary>
+    /// Maximum number of calendar days any date-rolling loop may advance or retreat.
+    /// No legitimate FX settlement roll exceeds this bound; a higher count indicates
+    /// corrupt or missing holiday data.
+    /// </summary>
+    private const int MaxRollDays = 30;
+
+    public DateConvention(string CCY, DataTable Holidays)
     {
-        #region Properties
-        public DateTime SpotDate { get; set; }
-        public DateTime ExpiryDate { get; set; }
-        public DateTime DeliveryDate { get; set; }
-        public int Days { get; set; }
-        #endregion
+        _holidays = Holidays;
+        _ccy = CCY;
+
+        if (_ccy == "USDCAD" || _ccy == "USDTRY" || _ccy == "USDPHP" ||
+            _ccy == "USDRUB" || _ccy == "USDKZT" || _ccy == "USDPKR")
+        {
+            _tAdd = 1;
+        }
+        else
+        {
+            _tAdd = 2;
+        }
+
+        Calendar Calendar = new Calendar(ctryNames(CCY), Holidays);
+        _calendar = Calendar;
+
+        // Bug #3 fix: cache a USA calendar once instead of rebuilding per call.
+        _usaCalendar = new Calendar("USA", Holidays);
+
+        // Bug #4 fix: cache the non-US leg calendar once instead of rebuilding per call.
+        _nonUsCalendar = BuildNonUsCalendar(CCY, Holidays);
     }
 
-    public class DateConvention
+    /// <summary>T+N settlement offset for this currency pair (1 for USDCAD/USDTRY/etc., 2 for all others).</summary>
+    public int TAdd => _tAdd;
+
+    /// <summary>
+    /// Builds a Calendar that contains holidays for the CCY legs excluding the USA leg.
+    /// Used by <see cref="isCCYHoliday_notUS"/> to avoid allocating a new Calendar per call.
+    /// </summary>
+    private static Calendar BuildNonUsCalendar(string ccy, DataTable holidays)
     {
-        #region Variables
-        private string[] ctryCurrency = new string[] { "EUR", "USD", "SEK", "NOK", "GBP", "CAD", "CHF", "AUD", "RUB", "JPY" };
-        private string[] ctryCalender = new string[] { "TARGET", "USA", "SWEDEN", "NORWAY", "ENGLAND", "CANADA", "SWITZERLAND", "AUSTRALIA", "RUSSIA", "JAPAN" };
+        string[] ctryCal = ctryNames(ccy);
 
-        private DataTable _holidays = new DataTable();
-        private string _ccy;
-        private int _tAdd;
+        string ctry1;
+        string ctry2;
 
-        private DateTime _spotDate;
-        private DateTime _expiryDate;
-        private DateTime _deliveryDate;
-        private int _days;
-
-        private Calendar _calendar;
-        #endregion
-
-        #region Constructor
-        public DateConvention(string CCY, DataTable Holidays)
+        if (ctryCal[0] == "USA")
         {
-            _holidays = Holidays;
-            _ccy = CCY;
-
-            if (CCY.Replace("/", "") == "USDCAD" || CCY == "USDTRY" || CCY == "USDPHP" || CCY == "USDRUB" || CCY == "USDKZT" || CCY == "USDPKR")
-            {
-                _tAdd = 1;
-            }
-            else
-            {
-                _tAdd = 2;
-            }
-
-            Calendar Calendar = new Calendar(ctryNames(CCY), Holidays);
-            _calendar = Calendar;
+            ctry1 = ctryCal[1];
+            ctry2 = "";
         }
-        #endregion
-
-        #region Property
-        public string SpotDate
+        else if (ctryCal[1] == "USA")
         {
-            get
-            {
-                return this._spotDate.ToString("yyyy-MM-dd");
-            }
+            ctry1 = ctryCal[0];
+            ctry2 = "";
         }
-        public string ExpiryDate
+        else
         {
-            get
-            {
-                return this._expiryDate.ToString("yyyy-MM-dd");
-            }
-        }
-        public string DeliveryDate
-        {
-            get
-            {
-                return this._deliveryDate.ToString("yyyy-MM-dd");
-            }
-        }
-        public int Days
-        {
-            get
-            {
-                return this._days;
-            }
-        }
-        #endregion
-
-        #region Method
-        public Convention GetConvention(string timeToExpiry)
-        {
-            DateTime horizonDate = DateTime.Parse(DateTime.Now.ToShortDateString());
-
-            // Over-night
-            if (timeToExpiry.ToLower() == "on")
-            {
-                _spotDate = getForwardDate(horizonDate, _tAdd);
-                _expiryDate = moveBusinessDays(horizonDate, 1);
-
-                if (isFirstOfJan(_expiryDate) == true)
-                {
-                    _expiryDate = moveBusinessDays(_expiryDate, 1);
-                }
-
-                _deliveryDate = getForwardDate(_expiryDate, _tAdd);
-            }
-
-            //days
-            else if (timeToExpiry.ToLower().EndsWith("d"))
-            {
-                _spotDate = getForwardDate(horizonDate, _tAdd);
-                double daysToExpiry = double.Parse(timeToExpiry.ToLower().Replace("d", ""));
-                _expiryDate = horizonDate.AddDays(daysToExpiry);
-
-                if (isFirstOfJan(_expiryDate) == true)
-                {
-                    _expiryDate = moveBusinessDays(_expiryDate, 1);
-                }
-                _deliveryDate = getForwardDate(_expiryDate, _tAdd);
-            }
-            //weeks
-            else if (timeToExpiry.ToLower().EndsWith("w"))
-            {
-                _spotDate = getForwardDate(horizonDate, _tAdd);
-
-                timeToExpiry = timeToExpiry.ToLower().Replace("w", "");
-                _expiryDate = horizonDate.AddDays(7 * int.Parse(timeToExpiry));
-
-                if (isFirstOfJan(_expiryDate) == true)
-                {
-                    _expiryDate = moveBusinessDays(_expiryDate, 1);
-                }
-                _deliveryDate = getForwardDate(_expiryDate, _tAdd);
-            }
-            //months
-            else if (timeToExpiry.ToLower().EndsWith("m"))
-            {
-                string monthString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
-                if (int.TryParse(monthString, out int months))
-                {
-                    _spotDate = getForwardDate(horizonDate, _tAdd);
-                    _deliveryDate = addMonths(_spotDate, months);
-                    _expiryDate = getBackwardDate(_deliveryDate, _tAdd);
-                }
-            }
-            //years
-            else if (timeToExpiry.ToLower().EndsWith("y"))
-            {
-                string yearString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
-                if (int.TryParse(yearString, out int years))
-                {
-                    _spotDate = getForwardDate(horizonDate, _tAdd);
-                    _deliveryDate = addYears(_spotDate, years);
-                    _expiryDate = getBackwardDate(_deliveryDate, _tAdd);
-                }
-            }
-            else
-            {
-                _spotDate = getForwardDate(horizonDate, _tAdd);
-                _deliveryDate = getForwardDate(DateTime.Parse(timeToExpiry), _tAdd);
-                _expiryDate = getBackwardDate(_deliveryDate, _tAdd);
-            }
-
-            _days = int.Parse((_expiryDate - horizonDate).TotalDays.ToString());
-
-            var result = new Convention() { SpotDate = _spotDate, ExpiryDate = _expiryDate, DeliveryDate = _deliveryDate, Days = _days };
-
-            return result;
-        }
-        #endregion
-
-        #region Functions
-        // Finding Country Names for the CCY
-        public string[] ctryNames(string CCY)
-        {
-            string[] output = new string[2];
-
-
-            string ccyBase = "";
-            string ccyPrice = "";
-            if (CCY.Contains("/"))
-            {
-                ccyBase = CCY.Substring(0, 3);
-                ccyPrice = CCY.Substring(4, 3);
-            }
-            else
-            {
-                ccyBase = CCY.Substring(0, 3);
-                ccyPrice = CCY.Substring(3, 3);
-            }
-
-            int cols = this.ctryCurrency.Length;
-
-            for (int i = 0; i < cols; i++)
-            {
-                if (this.ctryCurrency[i] == ccyBase)
-                {
-                    output[0] = this.ctryCalender[i];
-                }
-                else if (this.ctryCurrency[i] == ccyPrice)
-                {
-                    output[1] = this.ctryCalender[i];
-                }
-            }
-            return output;
+            ctry1 = ctryCal[0];
+            ctry2 = ctryCal[1];
         }
 
-        // Find CCY Holiday
-        private bool isCCYHoliday(DateTime date)
-        {
-            bool output = false;
+        return new Calendar(new string[] { ctry1, ctry2 }, holidays);
+    }
 
-            if (this._calendar.IsHoliday(date) == true)
+    public Convention GetConvention(string timeToExpiry)
+    {
+        DateTime horizonDate = DateTime.Today;
+
+        DateTime spotDate;
+        DateTime expiryDate;
+        DateTime deliveryDate;
+
+        // Over-night
+        if (timeToExpiry.ToLower() == "on")
+        {
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            expiryDate = moveBusinessDays(horizonDate, 1);
+
+            if (isFirstOfJan(expiryDate) == true)
+            {
+                expiryDate = moveBusinessDays(expiryDate, 1);
+            }
+
+            deliveryDate = getForwardDate(expiryDate, _tAdd);
+        }
+
+        // days
+        else if (timeToExpiry.ToLower().EndsWith("d"))
+        {
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            string dStr = timeToExpiry.ToLower().Replace("d", "");
+            if (!double.TryParse(dStr, NumberStyles.Any, CultureInfo.InvariantCulture, out double daysToExpiry))
+                throw new FormatException($"Cannot parse day count '{dStr}' in tenor '{timeToExpiry}'.");
+            expiryDate = horizonDate.AddDays(daysToExpiry);
+
+            if (isFirstOfJan(expiryDate) == true)
+            {
+                expiryDate = moveBusinessDays(expiryDate, 1);
+            }
+            deliveryDate = getForwardDate(expiryDate, _tAdd);
+        }
+
+        // weeks
+        else if (timeToExpiry.ToLower().EndsWith("w"))
+        {
+            spotDate = getForwardDate(horizonDate, _tAdd);
+
+            string wStr = timeToExpiry.ToLower().Replace("w", "");
+            if (!int.TryParse(wStr, NumberStyles.None, CultureInfo.InvariantCulture, out int weeks))
+                throw new FormatException($"Cannot parse week count '{wStr}' in tenor '{timeToExpiry}'.");
+            expiryDate = horizonDate.AddDays(7 * weeks);
+
+            if (isFirstOfJan(expiryDate) == true)
+            {
+                expiryDate = moveBusinessDays(expiryDate, 1);
+            }
+            deliveryDate = getForwardDate(expiryDate, _tAdd);
+        }
+
+        // months
+        else if (timeToExpiry.ToLower().EndsWith("m"))
+        {
+            string monthString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
+            if (!int.TryParse(monthString, NumberStyles.None, CultureInfo.InvariantCulture, out int months))
+                throw new FormatException($"Cannot parse month count '{monthString}' in tenor '{timeToExpiry}'.");
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            deliveryDate = addMonths(spotDate, months);
+            expiryDate = getBackwardDate(deliveryDate, _tAdd);
+        }
+
+        // years
+        else if (timeToExpiry.ToLower().EndsWith("y"))
+        {
+            string yearString = timeToExpiry.Substring(0, timeToExpiry.Length - 1);
+            if (!int.TryParse(yearString, NumberStyles.None, CultureInfo.InvariantCulture, out int years))
+                throw new FormatException($"Cannot parse year count '{yearString}' in tenor '{timeToExpiry}'.");
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            deliveryDate = addYears(spotDate, years);
+            expiryDate = getBackwardDate(deliveryDate, _tAdd);
+        }
+
+        // explicit ISO date
+        else
+        {
+            if (!DateTime.TryParseExact(timeToExpiry, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out DateTime explicitDate))
+                throw new FormatException($"Cannot parse '{timeToExpiry}' as an explicit date. Expected format: yyyy-MM-dd.");
+
+            spotDate = getForwardDate(horizonDate, _tAdd);
+            deliveryDate = getForwardDate(explicitDate, _tAdd);
+            expiryDate = getBackwardDate(deliveryDate, _tAdd);
+        }
+
+        int days = (int)Math.Round((expiryDate - horizonDate).TotalDays, MidpointRounding.AwayFromZero);
+
+        return new Convention
+        {
+            SpotDate = spotDate,
+            ExpiryDate = expiryDate,
+            DeliveryDate = deliveryDate,
+            Days = days
+        };
+    }
+
+    // Finding Country Names for the CCY
+    internal static string[] ctryNames(string CCY)
+    {
+        string ccyBase;
+        string ccyPrice;
+
+        if (CCY.Contains("/"))
+        {
+            ccyBase = CCY.Substring(0, 3);
+            ccyPrice = CCY.Substring(4, 3);
+        }
+        else
+        {
+            ccyBase = CCY.Substring(0, 3);
+            ccyPrice = CCY.Substring(3, 3);
+        }
+
+        // Default to empty string so Calendar never receives a null entry
+        // for currencies that are not in the lookup dictionary.
+        CurrencyToCalendar.TryGetValue(ccyBase, out var calBase);
+        CurrencyToCalendar.TryGetValue(ccyPrice, out var calPrice);
+
+        return [calBase ?? string.Empty, calPrice ?? string.Empty];
+    }
+
+    // Find CCY Holiday
+    private bool isCCYHoliday(DateTime date)
+    {
+        bool output = false;
+
+        if (this._calendar.IsHoliday(date) == true)
+        {
+            output = true;
+        }
+
+        return output;
+    }
+
+    // if CCY is USD check for other leg holiday
+    // Bug #4 fix: use the cached _nonUsCalendar instead of allocating a new Calendar per call.
+    private bool isCCYHoliday_notUS(DateTime date)
+    {
+        return _nonUsCalendar.IsHoliday(date);
+    }
+
+    // Check if it is CCy holiday OR US holiday
+    // Bug #3 fix: use the cached _usaCalendar instead of allocating a new Calendar per call.
+    private bool isCCYorUSHoliday(DateTime date)
+    {
+        return _calendar.IsHoliday(date) || _usaCalendar.IsHoliday(date);
+    }
+
+    //Check if it is First of jan
+    private bool isFirstOfJan(DateTime date)
+    {
+        bool output = false;
+
+        if (date.Month == 1 && date.Day == 1)
+        {
+            output = true;
+        }
+
+        return output;
+    }
+
+    // Check if date is end of month
+    private bool isEndOfMonth(DateTime date)
+    {
+        bool output = false;
+
+        if (date.Day.ToString() == DateTime.DaysInMonth(date.Year, date.Month).ToString())
+        {
+            output = true;
+        }
+
+        return output;
+    }
+
+    //Check if it is date is end of month date
+    private bool isLastBusDayOfMonth(DateTime date)
+    {
+        bool output = false;
+
+        if (isEndOfMonth(date) == true)
+        {
+            output = true;
+        }
+        else if (date.DayOfWeek == DayOfWeek.Friday)
+        {
+            if (isEndOfMonth(date.AddDays(1)) == true || isEndOfMonth(date.AddDays(2)) == true)
             {
                 output = true;
             }
-
-            return output;
         }
 
-        // if CCY is USD check for other leg holiday
-        private bool isCCYHoliday_notUS(DateTime date)
+        return output;
+    }
+
+    // Move date bus day back or forward
+    // Bug #19 fix: replaced the arithmetic shortcut with an iterative walk that
+    // also skips CCY and US holidays, matching the contract assumed by all callers.
+    private DateTime moveBusinessDays(DateTime startDate, int businessDays)
+    {
+        if (businessDays == 0)
+            return startDate;
+
+        int direction = Math.Sign(businessDays);
+        int remaining = Math.Abs(businessDays);
+        DateTime current = startDate;
+        int guard = 0;
+
+        while (remaining > 0)
         {
-            bool output = false;
+            if (guard++ > MaxRollDays * remaining)
+                throw new InvalidOperationException(
+                    $"moveBusinessDays exceeded safety limit from {startDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
 
-            string[] ctryCal;
-            ctryCal = ctryNames(this._ccy);
+            current = current.AddDays(direction);
 
-            string ctry1 = string.Empty;
-            string ctry2 = string.Empty;
-
-            if (ctryCal[0] == "USA")
+            if (current.DayOfWeek != DayOfWeek.Saturday
+                && current.DayOfWeek != DayOfWeek.Sunday
+                && !isCCYorUSHoliday(current))
             {
-                ctry1 = ctryCal[1];
-                ctry2 = "";
+                remaining--;
             }
-            else if (ctryCal[1] == "USA")
-            {
-                ctry1 = ctryCal[0];
-                ctry2 = "";
-            }
-            else if (ctryCal[0] != "USA" || ctryCal[1] != "USA")
-            {
-                ctry1 = ctryCal[0];
-                ctry2 = ctryCal[1];
-            }
-
-            Calendar cal = new Calendar(new string[] { ctry1, ctry2 }, _holidays);
-
-            if (cal.IsHoliday(date) == true)
-            {
-                output = true;
-            }
-
-            return output;
         }
 
-        // Check if it is CCy holiday OR US holiday
-        private bool isCCYorUSHoliday(DateTime date)
+        return current;
+    }
+
+    //get delivery date if we add months
+    // Bug #5 fix: after holiday-rolling in the EOM branch, verify the date hasn't
+    // crossed into the next month. If it has, roll backward instead (Modified Following).
+    private DateTime addMonths(DateTime spotDate, int nrMonthAdd)
+    {
+        DateTime output;
+        output = spotDate.AddMonths(nrMonthAdd);
+
+        if (isLastBusDayOfMonth(spotDate) == true)
         {
-            bool output = false;
+            int targetMonth = output.Month;
 
-            if (this._calendar.IsHoliday(date) == true || new Calendar("USA", _holidays).IsHoliday(date) == true)
-            {
-                output = true;
-            }
-
-            return output;
-        }
-
-        //Check if it is First of jan
-        private bool isFirstOfJan(DateTime date)
-        {
-            bool output = false;
-
-            if (date.Month == 1 && date.Day == 1)
-            {
-                output = true;
-            }
-
-            return output;
-        }
-
-        // Check if date is end of month
-        private bool isEndOfMonth(DateTime date)
-        {
-            bool output = false;
-
-            if (date.Day.ToString() == DateTime.DaysInMonth(date.Year, date.Month).ToString())
-            {
-                output = true;
-            }
-
-            return output;
-        }
-
-        //Check if it is date is end of month date
-        private bool isLastBusDayOfMonth(DateTime date)
-        {
-            bool output = false;
-
-            if (isEndOfMonth(date) == true)
-            {
-                output = true;
-            }
-            else if (date.DayOfWeek == DayOfWeek.Friday)
-            {
-                if (isEndOfMonth(date.AddDays(1)) == true || isEndOfMonth(date.AddDays(2)) == true)
-                {
-                    output = true;
-                }
-            }
-
-            return output;
-        }
-
-        // Move date bus day back or forward
-        private DateTime moveBusinessDays(DateTime startDate, int businessDays)
-        {
-            int direction = Math.Sign(businessDays);
-            if (direction == 1)
-            {
-                if (startDate.DayOfWeek == DayOfWeek.Saturday)
-                {
-                    startDate = startDate.AddDays(2);
-                    businessDays = businessDays - 1;
-                }
-                else if (startDate.DayOfWeek == DayOfWeek.Sunday)
-                {
-                    startDate = startDate.AddDays(1);
-                    businessDays = businessDays - 1;
-                }
-            }
-            else
-            {
-                if (startDate.DayOfWeek == DayOfWeek.Saturday)
-                {
-                    startDate = startDate.AddDays(-1);
-                    businessDays = businessDays + 1;
-                }
-                else if (startDate.DayOfWeek == DayOfWeek.Sunday)
-                {
-                    startDate = startDate.AddDays(-2);
-                    businessDays = businessDays + 1;
-                }
-            }
-
-            int initialDayOfWeek = Convert.ToInt32(startDate.DayOfWeek);
-
-            int weeksBase = Math.Abs(businessDays / 5);
-            int addDays = Math.Abs(businessDays % 5);
-
-            if ((direction == 1 && addDays + initialDayOfWeek > 5) ||
-                 (direction == -1 && addDays >= initialDayOfWeek))
-            {
-                addDays += 2;
-            }
-
-            int totalDays = (weeksBase * 7) + addDays;
-
-            return startDate.AddDays(totalDays * direction);
-        }
-
-        //get delivery date if we add months
-        private DateTime addMonths(DateTime spotDate, int nrMonthAdd)
-        {
-            DateTime output;
-            output = spotDate.AddMonths(nrMonthAdd);
-
-            if (isLastBusDayOfMonth(spotDate) == true)
-            {
-                do
-                {
-                    if (isLastBusDayOfMonth(output) == false)
-                    {
-                        output = output.AddDays(1);
-                    }
-                } while (isLastBusDayOfMonth(output) == false);
-
-                if (output.DayOfWeek == DayOfWeek.Saturday)
-                {
-                    output = output.AddDays(-1);
-                }
-                else if (output.DayOfWeek == DayOfWeek.Sunday)
-                {
-                    output = output.AddDays(-2);
-                }
-                while (isCCYorUSHoliday(output) == true)
-                {
-                    output = output.AddDays(1);
-                }
-            }
-            else
-            {
-                if (output.DayOfWeek == DayOfWeek.Saturday)
-                {
-                    output = output.AddDays(2);
-                }
-                else if (output.DayOfWeek == DayOfWeek.Sunday)
-                {
-                    output = output.AddDays(1);
-                }
-                while (isCCYorUSHoliday(output) == true)
-                {
-                    output = output.AddDays(1);
-                }
-            }
-
-            return output;
-        }
-
-        // Get delivery dates if we add years
-        private DateTime addYears(DateTime spotDate, int nrYearsAdd)
-        {
-            DateTime output;
-            output = spotDate;
-
-            output = spotDate.AddYears(nrYearsAdd);
-
-            if (output.DayOfWeek == DayOfWeek.Saturday)
-            {
-                output = output.AddDays(2);
-            }
-            else if (output.DayOfWeek == DayOfWeek.Sunday)
-            {
-                output = output.AddDays(1);
-            }
-            while (isCCYorUSHoliday(output) == true)
-            {
-                output = output.AddDays(1);
-            }
-
-            return output;
-        }
-
-
-        // Move forward function (Spot date)
-        public DateTime getForwardDate(DateTime horizonDate, int tAdd)
-        {
-            DateTime output = horizonDate.AddDays(1);
-
-            int numBusDays = 0;
-            if (this._ccy.Substring(0, 3) != "USD" && this._ccy.Substring(3, 3) != "USD")
-            {
-                do
-                {
-                    if (isCCYHoliday(output) == false && output.DayOfWeek != DayOfWeek.Saturday && output.DayOfWeek != DayOfWeek.Sunday)
-                    {
-                        numBusDays = numBusDays + 1;
-                    }
-                    if (numBusDays < tAdd)
-                    {
-                        output = output.AddDays(1);
-                    }
-
-                } while (numBusDays < tAdd);
-            }
-            else
-            {
-                do
-                {
-                    if (isCCYHoliday_notUS(output) == false && output.DayOfWeek != DayOfWeek.Saturday && output.DayOfWeek != DayOfWeek.Sunday)
-                    {
-                        numBusDays = numBusDays + 1;
-                    }
-                    if (numBusDays < tAdd)
-                    {
-                        output = output.AddDays(1);
-                    }
-
-                } while (numBusDays < tAdd);
-
-            }
-
-            // Check if Spot date is US holiday, if TRUE them move FORWARD 1 day until we find a non-US and non-CCY holiday
+            int rollDays = 0;
             do
             {
-                if (new Calendar("USA", _holidays).IsHoliday(output) == true)
+                if (rollDays++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"addMonths EOM roll exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+                if (isLastBusDayOfMonth(output) == false)
                 {
                     output = output.AddDays(1);
                 }
-            } while (isCCYorUSHoliday(output) == true);
-
-            return output;
-        }
-
-        // Move Backwards function (from Delivery to Expiry date)
-        private DateTime getBackwardDate(DateTime deliveryDate, int tAdd)
-        {
-            DateTime output;
-            output = deliveryDate;
-
-            output = moveBusinessDays(deliveryDate, -tAdd);
+            } while (isLastBusDayOfMonth(output) == false);
 
             if (output.DayOfWeek == DayOfWeek.Saturday)
             {
@@ -514,45 +386,268 @@ namespace FxTradeConfirmation.Helpers
                 output = output.AddDays(-2);
             }
 
-            if (isFirstOfJan(output) == true)
+            int holidayRoll = 0;
+            while (isCCYorUSHoliday(output) == true)
             {
-                output = output.AddDays(-1);
+                if (holidayRoll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"addMonths holiday skip exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+                output = output.AddDays(1);
             }
 
-            bool businessDayFound = false;
-            do
+            // Bug #5 fix: if holiday rolling pushed us into the next month,
+            // fall back to the last good business day in the target month
+            // (Modified Following convention for EOM dates).
+            if (output.Month != targetMonth)
             {
-                int timespan = int.Parse((deliveryDate - output).TotalDays.ToString());
-                for (int i = 1; i < timespan; i++)
-                {
-                    DateTime dayToCheck = output.AddDays(i);
-                    if (dayToCheck.DayOfWeek != DayOfWeek.Sunday && dayToCheck.DayOfWeek != DayOfWeek.Saturday && isCCYHoliday_notUS(dayToCheck) == false)
-                    {
-                        businessDayFound = true;
-                    }
-                }
-                if (businessDayFound == false)
-                {
-                    output = moveBusinessDays(output, -1);
+                // Start from the last calendar day of the target month and walk backward
+                output = new DateTime(output.Year, targetMonth, DateTime.DaysInMonth(output.Year, targetMonth));
 
-                    if (output.DayOfWeek == DayOfWeek.Saturday)
+                // Skip weekends
+                while (output.DayOfWeek == DayOfWeek.Saturday || output.DayOfWeek == DayOfWeek.Sunday)
+                {
+                    output = output.AddDays(-1);
+                }
+
+                // Skip holidays going backward
+                int backRoll = 0;
+                while (isCCYorUSHoliday(output) == true)
+                {
+                    if (backRoll++ > MaxRollDays)
+                        throw new InvalidOperationException(
+                            $"addMonths EOM backward roll exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+                    output = output.AddDays(-1);
+
+                    // Also skip weekends when rolling backward
+                    while (output.DayOfWeek == DayOfWeek.Saturday || output.DayOfWeek == DayOfWeek.Sunday)
                     {
                         output = output.AddDays(-1);
                     }
-                    else if (output.DayOfWeek == DayOfWeek.Sunday)
-                    {
-                        output = output.AddDays(-2);
-                    }
                 }
-
-            } while (businessDayFound == false);
-
-            return output;
+            }
         }
-        #endregion
+        else
+        {
+            if (output.DayOfWeek == DayOfWeek.Saturday)
+            {
+                output = output.AddDays(2);
+            }
+            else if (output.DayOfWeek == DayOfWeek.Sunday)
+            {
+                output = output.AddDays(1);
+            }
+
+            int holidayRoll = 0;
+            while (isCCYorUSHoliday(output) == true)
+            {
+                if (holidayRoll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"addMonths holiday skip exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+                output = output.AddDays(1);
+            }
+        }
+
+        return output;
+    }
+
+    // Get delivery dates if we add years
+    private DateTime addYears(DateTime spotDate, int nrYearsAdd)
+    {
+        DateTime output;
+        output = spotDate;
+
+        output = spotDate.AddYears(nrYearsAdd);
+
+        if (output.DayOfWeek == DayOfWeek.Saturday)
+        {
+            output = output.AddDays(2);
+        }
+        else if (output.DayOfWeek == DayOfWeek.Sunday)
+        {
+            output = output.AddDays(1);
+        }
+
+        int holidayRoll = 0;
+        while (isCCYorUSHoliday(output) == true)
+        {
+            if (holidayRoll++ > MaxRollDays)
+                throw new InvalidOperationException(
+                    $"addYears holiday skip exceeded {MaxRollDays} days from {output:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+            output = output.AddDays(1);
+        }
+
+        return output;
     }
 
 
+    // Move forward function (Spot date)
+    internal DateTime getForwardDate(DateTime horizonDate, int tAdd)
+    {
+        DateTime output = horizonDate.AddDays(1);
 
+        int numBusDays = 0;
+        if (this._ccy.Substring(0, 3) != "USD" && this._ccy.Substring(3, 3) != "USD")
+        {
+            int roll = 0;
+            do
+            {
+                if (roll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"getForwardDate (non-USD) exceeded {MaxRollDays} days from {horizonDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
 
+                if (isCCYHoliday(output) == false && output.DayOfWeek != DayOfWeek.Saturday && output.DayOfWeek != DayOfWeek.Sunday)
+                {
+                    numBusDays = numBusDays + 1;
+                }
+                if (numBusDays < tAdd)
+                {
+                    output = output.AddDays(1);
+                }
+
+            } while (numBusDays < tAdd);
+        }
+        else
+        {
+            int roll = 0;
+            do
+            {
+                if (roll++ > MaxRollDays)
+                    throw new InvalidOperationException(
+                        $"getForwardDate (USD) exceeded {MaxRollDays} days from {horizonDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+                if (isCCYHoliday_notUS(output) == false && output.DayOfWeek != DayOfWeek.Saturday && output.DayOfWeek != DayOfWeek.Sunday)
+                {
+                    numBusDays = numBusDays + 1;
+                }
+                if (numBusDays < tAdd)
+                {
+                    output = output.AddDays(1);
+                }
+
+            } while (numBusDays < tAdd);
+        }
+
+        // Check if Spot date is US holiday, if TRUE then move FORWARD 1 day until we find a non-US and non-CCY holiday
+        // Bug #3 fix: use cached _usaCalendar instead of new Calendar("USA", _holidays)
+        int usRoll = 0;
+        do
+        {
+            if (usRoll++ > MaxRollDays)
+                throw new InvalidOperationException(
+                    $"getForwardDate US-holiday skip exceeded {MaxRollDays} days from {horizonDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+            if (_usaCalendar.IsHoliday(output) == true)
+            {
+                output = output.AddDays(1);
+            }
+        } while (isCCYorUSHoliday(output) == true);
+
+        return output;
+    }
+
+    // Move Backwards function (from Delivery to Expiry date)
+    private DateTime getBackwardDate(DateTime deliveryDate, int tAdd)
+    {
+        DateTime output;
+        output = deliveryDate;
+
+        output = moveBusinessDays(deliveryDate, -tAdd);
+
+        if (output.DayOfWeek == DayOfWeek.Saturday)
+        {
+            output = output.AddDays(-1);
+        }
+        else if (output.DayOfWeek == DayOfWeek.Sunday)
+        {
+            output = output.AddDays(-2);
+        }
+
+        if (isFirstOfJan(output) == true)
+        {
+            output = output.AddDays(-1);
+        }
+
+        bool businessDayFound = false;
+        int roll = 0;
+        do
+        {
+            if (roll++ > MaxRollDays)
+                throw new InvalidOperationException(
+                    $"getBackwardDate exceeded {MaxRollDays} iterations from {deliveryDate:yyyy-MM-dd} for {_ccy}. Holiday data may be corrupt or missing.");
+
+            int timespan = (int)(deliveryDate - output).TotalDays;
+            for (int i = 1; i < timespan; i++)
+            {
+                DateTime dayToCheck = output.AddDays(i);
+                if (dayToCheck.DayOfWeek != DayOfWeek.Sunday && dayToCheck.DayOfWeek != DayOfWeek.Saturday && isCCYHoliday_notUS(dayToCheck) == false)
+                {
+                    businessDayFound = true;
+                }
+            }
+            if (businessDayFound == false)
+            {
+                output = moveBusinessDays(output, -1);
+
+                if (output.DayOfWeek == DayOfWeek.Saturday)
+                {
+                    output = output.AddDays(-1);
+                }
+                else if (output.DayOfWeek == DayOfWeek.Sunday)
+                {
+                    output = output.AddDays(-2);
+                }
+            }
+
+        } while (businessDayFound == false);
+
+        return output;
+    }
+}
+
+/// <summary>
+/// Tiny helper so <see cref="DateConvention.BuildNonUsCalendar"/> can resolve
+/// country names without requiring a fully constructed <see cref="DateConvention"/>.
+/// </summary>
+internal sealed class DateConventionCountryResolver
+{
+    private static readonly Dictionary<string, string> CurrencyToCalendar =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["EUR"] = "TARGET",
+            ["USD"] = "USA",
+            ["SEK"] = "SWEDEN",
+            ["NOK"] = "NORWAY",
+            ["GBP"] = "ENGLAND",
+            ["CAD"] = "CANADA",
+            ["CHF"] = "SWITZERLAND",
+            ["AUD"] = "AUSTRALIA",
+            ["RUB"] = "RUSSIA",
+            ["JPY"] = "JAPAN",
+        };
+
+    public string[] Resolve(string ccy)
+    {
+        string ccyBase;
+        string ccyPrice;
+
+        if (ccy.Contains("/"))
+        {
+            ccyBase = ccy.Substring(0, 3);
+            ccyPrice = ccy.Substring(4, 3);
+        }
+        else
+        {
+            ccyBase = ccy.Substring(0, 3);
+            ccyPrice = ccy.Substring(3, 3);
+        }
+
+        CurrencyToCalendar.TryGetValue(ccyBase, out var calBase);
+        CurrencyToCalendar.TryGetValue(ccyPrice, out var calPrice);
+
+        return [calBase ?? string.Empty, calPrice ?? string.Empty];
+    }
 }

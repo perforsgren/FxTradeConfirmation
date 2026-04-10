@@ -1,0 +1,147 @@
+﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FxTradeConfirmation.Views.RestoreDraftDialog"
+        Title="Restore Draft" Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        KeyDown="Window_KeyDown">
+
+    <Border Background="{StaticResource BgCardBrush}"
+            BorderBrush="{StaticResource AccentBlueBrush}"
+            BorderThickness="1" CornerRadius="12" Padding="24">
+        <StackPanel>
+
+            <!-- Header -->
+            <DockPanel Margin="0,0,0,20">
+                <Button Content="✕" DockPanel.Dock="Right"
+                        Style="{StaticResource IconButton}"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Click="Discard_Click" ToolTip="Discard draft (Esc)"
+                        VerticalAlignment="Top"/>
+                <TextBlock Text="↺  Unsaved Draft"
+                           Style="{StaticResource FieldLabel}"
+                           FontSize="14" FontWeight="SemiBold"
+                           Foreground="{StaticResource AccentBlueBrush}"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- Timestamp -->
+            <TextBlock x:Name="TimestampLine"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="12"
+                       Foreground="{StaticResource TextPrimaryBrush}"
+                       Margin="0,0,0,16"/>
+
+            <!-- Counterpart -->
+            <TextBlock x:Name="CounterpartLine"
+                       FontFamily="{StaticResource MonoFont}"
+                       FontSize="13" FontWeight="SemiBold"
+                       Foreground="{StaticResource AccentBlueBrush}"
+                       Margin="0,0,0,12"/>
+
+            <!-- Leg summary cards -->
+            <ItemsControl x:Name="LegSummaries" Margin="0,0,0,20">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource BgInputBrush}"
+                                BorderBrush="{StaticResource BorderSubtleBrush}"
+                                BorderThickness="1" CornerRadius="6"
+                                Padding="10,8" Margin="0,0,0,6">
+                            <Grid VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <!-- LEG N badge -->
+                                    <ColumnDefinition Width="50"/>
+                                    <!-- BUY CALL / SELL PUT -->
+                                    <ColumnDefinition Width="80"/>
+                                    <!-- EURUSD -->
+                                    <ColumnDefinition Width="56"/>
+                                    <!-- @ 10.4  exp 25-sep.-26 -->
+                                    <ColumnDefinition Width="160"/>
+                                    <!-- 20M EUR -->
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Col 0: Leg badge -->
+                                <Border Grid.Column="0"
+                                        Background="{StaticResource AccentBlueMutedBrush}"
+                                        CornerRadius="4" Padding="5,2"
+                                        Margin="0,0,8,0" VerticalAlignment="Center"
+                                        HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding LegLabel}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="10" FontWeight="SemiBold"
+                                               Foreground="{StaticResource AccentBlueBrush}"/>
+                                </Border>
+
+                                <!-- Col 1: Direction (BUY CALL) -->
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Direction}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="11" FontWeight="SemiBold"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{StaticResource NegativeRedBrush}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsBuy}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource PositiveGreenBrush}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <!-- Col 2: Currency pair -->
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding Pair}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           VerticalAlignment="Center"/>
+
+                                <!-- Col 3: Strike + expiry -->
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding StrikeExpiry}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"/>
+
+                                <!-- Col 4: Notional -->
+                                <TextBlock Grid.Column="4"
+                                           Text="{Binding Notional}"
+                                           FontFamily="{StaticResource MonoFont}"
+                                           FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"/>
+
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Sub-text -->
+            <TextBlock Text="Do you want to restore it?"
+                       FontFamily="{StaticResource MainFont}"
+                       FontSize="12"
+                       Foreground="{StaticResource TextMutedBrush}"
+                       Margin="0,0,0,20"/>
+
+            <!-- Buttons -->
+            <UniformGrid Columns="2">
+                <Button Content="↺  Restore"
+                        Style="{StaticResource TradingButton}"
+                        Margin="0,0,6,0"
+                        Click="Restore_Click"
+                        ToolTip="Restore the draft (Enter)"/>
+                <Button Content="Discard"
+                        Style="{StaticResource TradingButton}"
+                        Margin="6,0,0,0"
+                        Click="Discard_Click"
+                        ToolTip="Delete draft and start fresh (Esc)"/>
+            </UniformGrid>
+
+        </StackPanel>
+    </Border>
+</Window>

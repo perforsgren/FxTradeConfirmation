@@ -5,10 +5,30 @@ namespace FxTradeConfirmation.Helpers;
 public static class PremiumCalculator
 {
     /// <summary>
+    /// Strips separators (/, -, _) from a currency pair before inspection.
+    /// </summary>
+    private static string Normalize(string currencyPair) =>
+        currencyPair.Replace("/", string.Empty)
+                    .Replace("-", string.Empty)
+                    .Replace("_", string.Empty);
+
+    /// <summary>
+    /// Returns the pip divisor for the given currency pair.
+    /// JPY as quote currency uses 100; all other pairs use 10 000.
+    /// </summary>
+    public static decimal PipDivisor(string currencyPair)
+    {
+        string normalized = Normalize(currencyPair);
+        return normalized.Length >= 6 && normalized[3..6] == "JPY" ? 100m : 10_000m;
+    }
+
+    /// <summary>
     /// Calculate PremiumAmount from Premium (pips/pct) and Notional.
     /// Strike is needed for cross-currency pips calculations.
+    /// currencyPair is required for PipsQuote to apply the correct pip divisor.
     /// </summary>
-    public static decimal? CalculateAmount(decimal? premium, decimal? notional, PremiumStyle style, decimal? strike = null)
+    public static decimal? CalculateAmount(decimal? premium, decimal? notional, PremiumStyle style,
+        decimal? strike = null, string currencyPair = "")
     {
         if (!premium.HasValue || !notional.HasValue || notional.Value == 0) return null;
 
@@ -17,8 +37,8 @@ public static class PremiumCalculator
             // % of base ccy notional → amount = premium% * notional
             PremiumStyle.PctBase => premium.Value * notional.Value / 100m,
 
-            // Quote-ccy pips → amount = premium * notional / 10 000
-            PremiumStyle.PipsQuote => premium.Value * notional.Value / 10_000m,
+            // Quote-ccy pips → amount = premium * notional / pip divisor (100 for JPY, 10 000 otherwise)
+            PremiumStyle.PipsQuote => premium.Value * notional.Value / PipDivisor(currencyPair),
 
             // % of quote ccy notional → need strike to convert notional to quote ccy
             // quote notional = notional * strike, amount = premium% * quote notional
@@ -33,8 +53,10 @@ public static class PremiumCalculator
     /// <summary>
     /// Calculate Premium (pips/pct) from PremiumAmount and Notional.
     /// Strike is needed for cross-currency pips calculations.
+    /// currencyPair is required for PipsQuote to apply the correct pip divisor.
     /// </summary>
-    public static decimal? CalculatePremium(decimal? premiumAmount, decimal? notional, PremiumStyle style, decimal? strike = null)
+    public static decimal? CalculatePremium(decimal? premiumAmount, decimal? notional, PremiumStyle style,
+        decimal? strike = null, string currencyPair = "")
     {
         if (!premiumAmount.HasValue || !notional.HasValue || notional.Value == 0) return null;
 
@@ -42,7 +64,7 @@ public static class PremiumCalculator
         {
             PremiumStyle.PctBase => premiumAmount.Value / notional.Value * 100m,
 
-            PremiumStyle.PipsQuote => premiumAmount.Value / notional.Value * 10_000m,
+            PremiumStyle.PipsQuote => premiumAmount.Value / notional.Value * PipDivisor(currencyPair),
 
             PremiumStyle.PctQuote => strike.HasValue && strike.Value != 0
                 ? premiumAmount.Value / (notional.Value * strike.Value) * 100m

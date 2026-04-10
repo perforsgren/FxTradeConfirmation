@@ -6,7 +6,7 @@ namespace FxTradeConfirmation.Converters;
 
 /// <summary>
 /// Converts a decimal premium value to a color:
-/// Positive → Green, Negative → Red, Zero → Neutral
+/// Positive → Green, Negative → Red, Zero → AccentBlue
 /// </summary>
 public class PremiumColorConverter : IValueConverter
 {
@@ -16,8 +16,9 @@ public class PremiumColorConverter : IValueConverter
         {
             if (d > 0) return new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81)); // Green
             if (d < 0) return new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44)); // Red
+            return new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6));             // AccentBlue
         }
-        return new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)); // Gray
+        return new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6));                 // AccentBlue
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

@@ -1,0 +1,83 @@
+﻿<Window x:Class="FxTradeConfirmation.Views.SaveResultDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Save Results" Width="460" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        KeyDown="Window_KeyDown">
+
+    <Border Background="{StaticResource BgCardBrush}"
+            BorderBrush="{StaticResource AccentBlueBrush}"
+            BorderThickness="1" CornerRadius="12" Padding="24">
+        <StackPanel>
+            <!-- Header -->
+            <DockPanel Margin="0,0,0,12">
+                <Button Content="✕" DockPanel.Dock="Right"
+                        Style="{StaticResource IconButton}"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Click="Close_Click" ToolTip="Close (Esc)"
+                        VerticalAlignment="Top"/>
+                <TextBlock x:Name="TitleLabel"
+                           Text="Save Results"
+                           Style="{StaticResource FieldLabel}"
+                           FontSize="14" FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- Summary line -->
+            <TextBlock x:Name="SummaryLabel"
+                       FontSize="12" FontFamily="{StaticResource MonoFont}"
+                       Margin="0,0,0,8"/>
+
+            <!-- Bank perspective badge -->
+            <Border Background="{StaticResource AccentBlueMutedBrush}"
+                    BorderBrush="{StaticResource AccentBlueBrush}"
+                    BorderThickness="1" CornerRadius="4"
+                    Padding="8,4" Margin="0,0,0,10"
+                    HorizontalAlignment="Left">
+                <TextBlock Text="🏦 Directions shown from Bank's perspective"
+                           FontFamily="{StaticResource MonoFont}"
+                           FontSize="10"
+                           Foreground="{StaticResource AccentBlueBrush}"/>
+            </Border>
+
+            <!-- Results list -->
+            <ItemsControl x:Name="ResultsList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{StaticResource BgInputBrush}"
+                                BorderBrush="{StaticResource BorderSubtleBrush}"
+                                BorderThickness="1" CornerRadius="4"
+                                Padding="10,8" Margin="0,0,0,6">
+                            <DockPanel>
+                                <!-- Status icon -->
+                                <TextBlock DockPanel.Dock="Left"
+                                           Text="{Binding StatusIcon}"
+                                           FontSize="14" VerticalAlignment="Top"
+                                           Margin="0,0,10,0"/>
+                                <!-- Details -->
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Label}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                    <TextBlock Text="{Binding Detail}"
+                                               FontFamily="{StaticResource MonoFont}"
+                                               FontSize="11"
+                                               Foreground="{Binding DetailBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- OK button -->
+            <Button Content="OK" Style="{StaticResource TradingButton}"
+                    Click="Close_Click" Width="80"
+                    HorizontalAlignment="Center" Margin="0,12,0,0"/>
+        </StackPanel>
+    </Border>
+</Window>

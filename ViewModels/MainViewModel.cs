@@ -1,36 +1,96 @@
-﻿using System.Collections.ObjectModel;
-using System.Data;
-using System.Windows;
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using FxTradeConfirmation.Helpers;
 using FxTradeConfirmation.Models;
 using FxTradeConfirmation.Services;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Data;
+using System.Windows;
 
 namespace FxTradeConfirmation.ViewModels;
 
-public partial class MainViewModel : ObservableObject
+public partial class MainViewModel : ObservableObject, IDisposable
 {
     public IDatabaseService DatabaseService { get; }
     private readonly IEmailService _emailService;
+    private readonly ITradeIngestService? _ingestService;
+    private readonly IRecentTradeService? _recentTradeService;
+    private readonly IClipboardWatcher? _clipboardWatcher;
+    private readonly IOptionQueryFilter? _optionQueryFilter;
+    private volatile IOvmlParser _regexParser;
+    private readonly IOvmlParser _aiParser;
+    private readonly IBloombergPaster? _bloombergPaster;
 
-    public MainViewModel(IDatabaseService databaseService, IEmailService emailService)
+    private const string Tag = nameof(MainViewModel);
+
+    /// <summary>
+    /// When true, clipboard events from our own paste operations are suppressed.
+    /// Written on UI-thread (or ThreadPool continuation); read on UI-thread from WndProc.
+    /// volatile ensures cross-thread write visibility.
+    /// </summary>
+    private volatile bool _suppressClipboardEvents;
+
+    /// <summary>
+    /// Reentrance guard: 1 = flow in progress, 0 = idle.
+    /// Ensures only one clipboard parse+dialog cycle runs at a time.
+    /// </summary>
+    private int _clipboardFlowActive;
+
+    /// <summary>
+    /// Snapshot of the clipboard text captured immediately before a parse cycle
+    /// begins. Restored when the dialog closes (all results) and after
+    /// <see cref="SendToBloombergAsync"/> completes.
+    /// Null when no snapshot has been taken for the current cycle.
+    /// </summary>
+    private string? _clipboardSnapshot;
+
+    public MainViewModel(
+        IDatabaseService databaseService,
+        IEmailService emailService,
+        ITradeIngestService? ingestService = null,
+        IRecentTradeService? recentTradeService = null,
+        IClipboardWatcher? clipboardWatcher = null,
+        IOptionQueryFilter? optionQueryFilter = null,
+        IOvmlParser? regexParser = null,
+        IOvmlParser? aiParser = null,
+        IBloombergPaster? bloombergPaster = null)
     {
         DatabaseService = databaseService;
         _emailService = emailService;
-        ReferenceData = new ReferenceData();
+        _ingestService = ingestService;
+        _recentTradeService = recentTradeService;
+        _clipboardWatcher = clipboardWatcher;
+        _optionQueryFilter = optionQueryFilter;
+        ReferenceData = new ReferenceData();                          // ← före parsern
+        _regexParser = regexParser ?? new OvmlBuilderAP3(ReferenceData.CurrencyPairs);
+        _aiParser = aiParser ?? new OvmlBuilder(
+            promptFilePath: @"\\nas-se11.fspa.myntet.se\MUREX\PROD\FX\Settings\FxTradeConfirmation\Prompt.txt");
+        _bloombergPaster = bloombergPaster;
+
+        // Restore persisted user preferences before wiring up the watcher
+        var settings = AppSettings.Load();
+        _clipboardMonitorEnabled = settings.ClipboardMonitorEnabled;
+
+        if (_clipboardWatcher != null)
+        {
+            _clipboardWatcher.ClipboardChanged += OnClipboardChanged;
+            // Sync the watcher's IsEnabled flag to the persisted preference.
+            // The watcher is started separately (via Start()), so this only sets
+            // the passive-listening gate — no Start/Stop is needed here.
+            _clipboardWatcher.IsEnabled = _clipboardMonitorEnabled;
+        }
 
         // Start with one leg
         AddLegInternal();
 
-        _ = InitializeAsync();
+        InitializeAsync().FireAndForget(
+            onError: msg => StatusMessage = $"⚠ Startup error: {msg}");
     }
 
     // --- State ---
     [ObservableProperty] private ReferenceData _referenceData;
     [ObservableProperty] private bool _isConnected;
-    [ObservableProperty] private bool _isAdmin;
-    [ObservableProperty] private bool _showAdminRows;
     [ObservableProperty] private bool _isSolvingMode;
     [ObservableProperty] private decimal _totalPremium;
     [ObservableProperty] private string _totalPremiumDisplay = string.Empty;
@@ -48,6 +108,38 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private string _totalPremiumAmountDisplay = string.Empty;
 
+    /// <summary>True when all required fields are filled on every leg.</summary>
+    [ObservableProperty] private bool _canSave;
+
+    /// <summary>Tooltip text listing the missing required fields, or empty when all fields are valid.</summary>
+    [ObservableProperty] private string _saveValidationTooltip = string.Empty;
+
+    /// <summary>Whether the clipboard watcher auto-capture is enabled.</summary>
+    [ObservableProperty] private bool _clipboardAutoEnabled;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ToggleDetailsLabel))]
+    private bool _showAdminRows;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TogglePayoffLabel))]
+    private bool _showPayoffChart;
+
+    /// <summary>Menu label for the Details toggle — alternates between Show and Hide.</summary>
+    public string ToggleDetailsLabel => ShowAdminRows ? "Hide Details" : "Show Details";
+
+    /// <summary>Menu label for the Payoff toggle — alternates between Show and Hide.</summary>
+    public string TogglePayoffLabel => ShowPayoffChart ? "Hide Payoff" : "Show Payoff";
+
+    /// <summary>
+    /// True while a Save operation is in flight.
+    /// Used as the CanExecute guard for <see cref="SaveCommand"/> to prevent
+    /// double-submits from rapid button clicks.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    private bool _isSaving;
+
     /// <summary>
     /// Brush resource key for total premium color:
     /// negative (pay) → "NegativeRedBrush", positive (receive) → "PositiveGreenBrush", zero → "AccentBlueBrush".
@@ -59,7 +151,7 @@ public partial class MainViewModel : ObservableObject
         _ => "AccentBlueBrush"
     };
 
-    /// <summary>Holiday calendar data loaded from the AHS database.</summary>
+    /// <summary>Holiday calendar data loaded from the AHS database. Read-only after assignment.</summary>
     public DataTable Holidays { get; private set; } = new();
 
     public ObservableCollection<TradeLegViewModel> Legs { get; } = [];
@@ -84,44 +176,357 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     public event Action<bool, string, string>? SolvingDialogRequested;
 
+    /// <summary>
+    /// Raised after SaveAsync completes so the view can show a results dialog.
+    /// Parameters: results list, trade leg models (for labeling), success count, fail count.
+    /// </summary>
+    public event Action<IReadOnlyList<TradeSubmitResult>, IReadOnlyList<TradeLeg>, int, int>? SaveResultDialogRequested;
+
+    /// <summary>
+    /// Raised when "Open Recent" is clicked so the view can show the dialog.
+    /// The IRecentTradeService is passed so the dialog can load data.
+    /// </summary>
+    public event Action<IRecentTradeService>? OpenRecentDialogRequested;
+
+    /// <summary>
+    /// Raised when a clipboard option request has been parsed and is ready for user review.
+    /// Parameters: event args, ovml string, parsed legs, was-ai-parsed flag, completed callback.
+    /// The view MUST invoke the completed callback when the dialog closes.
+    /// </summary>
+    public event Action<ClipboardChangedEventArgs, string, IReadOnlyList<OvmlLeg>, bool, Action>? ClipboardCaptureDialogRequested;
+
+    /// <summary>
+    /// Raised as soon as clipboard parsing begins, so the view can bring itself to front immediately.
+    /// </summary>
+    public event Action? BringToFrontRequested;
+
+
+    // --- Clipboard Watcher ----
+
+    /// <summary>
+    /// Whether passive clipboard monitoring (WM_CLIPBOARDUPDATE) is active.
+    /// When <see langword="false"/>, the user pastes manually with Ctrl+V.
+    /// Persisted in <see cref="AppSettings"/> across restarts.
+    /// Orthogonal to <see cref="_suppressClipboardEvents"/>, which is a short-lived
+    /// guard around individual clipboard write-back operations.
+    /// </summary>
+    [ObservableProperty]
+    private bool _clipboardMonitorEnabled;
+
+    partial void OnClipboardMonitorEnabledChanged(bool value)
+    {
+        if (_clipboardWatcher != null)
+            _clipboardWatcher.IsEnabled = value;
+
+        StatusMessage = value
+            ? "📋 Clipboard monitor active"
+            : "📋 Clipboard monitor paused";
+
+        // Persist the preference immediately
+        var settings = AppSettings.Load();
+        settings.ClipboardMonitorEnabled = value;
+        settings.Save();
+    }
+
+    [RelayCommand]
+    private void ToggleClipboardWatcher()
+    {
+        if (_clipboardWatcher == null)
+        {
+            StatusMessage = "Bloomberg chat watcher not available.";
+            return;
+        }
+
+        ClipboardMonitorEnabled = !ClipboardMonitorEnabled;
+    }
+
+    private void OnClipboardChanged(object? sender, ClipboardChangedEventArgs e)
+    {
+        if (_suppressClipboardEvents || !ClipboardMonitorEnabled)
+            return;
+
+        if (string.IsNullOrWhiteSpace(e.Text))
+            return;
+
+        if (_optionQueryFilter != null && !_optionQueryFilter.IsOptionQuery(e.Text))
+            return;
+
+        // Only one parse+dialog cycle at a time
+        if (Interlocked.CompareExchange(ref _clipboardFlowActive, 1, 0) != 0)
+            return;
+
+        // Run parsing off the UI thread so the watcher is never blocked
+        Task.Run(() => RunClipboardFlowAsync(e))
+            .FireAndForget(onError: msg => StatusMessage = $"⚠ Clipboard error: {msg}");
+    }
+
+    /// <summary>
+    /// Entry point for manual Ctrl+V paste when passive clipboard monitoring is disabled.
+    /// Applies the option-query filter, acquires the reentrance guard, and runs the same
+    /// parse+dialog flow as the automatic watcher. Safe to call from the UI thread.
+    /// </summary>
+    public Task PasteFromClipboardAsync(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return Task.CompletedTask;
+
+        if (_optionQueryFilter != null && !_optionQueryFilter.IsOptionQuery(text))
+            return Task.CompletedTask;
+
+        // Only one parse+dialog cycle at a time
+        if (Interlocked.CompareExchange(ref _clipboardFlowActive, 1, 0) != 0)
+            return Task.CompletedTask;
+
+        var args = new ClipboardChangedEventArgs(text, ClipboardSourceInfo.Unknown(), DateTime.UtcNow);
+        return RunClipboardFlowAsync(args);
+    }
+
+    private async Task RunClipboardFlowAsync(ClipboardChangedEventArgs e)
+    {
+        try
+        {
+            // Bring MainWindow to front immediately when parsing starts
+            await (Application.Current?.Dispatcher
+                .InvokeAsync(() => BringToFrontRequested?.Invoke())
+                .Task
+                ?? Task.CompletedTask);
+
+            // The incoming text IS the original clipboard content we want to
+            // restore after a Bloomberg paste — save it directly.
+            _clipboardSnapshot = e.Text;
+
+            await SetStatusAsync("⏳ Parsing…");
+
+            var parser = _regexParser;
+
+            bool usedAi = false;
+            bool success = parser.TryParse(e.Text!, out var ovml, out var legs);
+
+            if (success)
+            {
+                FileLogger.Instance?.Info(Tag,
+                    $"Parsed via regex — {legs?.Count ?? 0} leg(s), source: '{e.Source.ForegroundWindowTitle}'.");
+            }
+            else
+            {
+                FileLogger.Instance?.Info(Tag, "Regex parse failed — falling back to AI parser.");
+                await SetStatusAsync("⏳ Parsing…");
+                var aiResult = await _aiParser.TryParseAsync(e.Text!);
+                success = aiResult.Success;
+                ovml = aiResult.Ovml;
+                legs = aiResult.Legs;
+                usedAi = success;
+
+                if (success)
+                    FileLogger.Instance?.Info(Tag,
+                        $"Parsed via AI — {legs?.Count ?? 0} leg(s), source: '{e.Source.ForegroundWindowTitle}'.");
+                else
+                    FileLogger.Instance?.Info(Tag,
+                        $"AI parse also failed — option request could not be parsed. Source: '{e.Source.ForegroundWindowTitle}'.");
+            }
+
+            if (!success)
+            {
+                await SetStatusAsync("⚠ Option request detected — could not parse.");
+                return;
+            }
+
+            await SetStatusAsync("✓ Parsing successful — waiting for your action.");
+
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            await (Application.Current?.Dispatcher
+                .InvokeAsync(() =>
+                    ClipboardCaptureDialogRequested?.Invoke(e, ovml, legs, usedAi, () => tcs.TrySetResult(true)))
+                .Task
+                ?? Task.CompletedTask);
+
+            await tcs.Task;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _clipboardFlowActive, 0);
+        }
+    }
+
+    internal Task SetStatusAsync(string message)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null) return Task.CompletedTask;
+        return dispatcher.InvokeAsync(() => StatusMessage = message).Task;
+    }
+
+    /// <summary>
+    /// Surfaces a status-bar warning when a leg rejects an unknown currency pair.
+    /// Called from <see cref="TradeLegViewModel.OnCurrencyPairChanged"/>.
+    /// </summary>
+    internal void NotifyInvalidCurrencyPair(string attempted) =>
+        _ = SetStatusAsync($"⚠ Currency pair '{attempted}' is not in the reference list — please select a valid pair.");
+
+    /// <summary>
+    /// Restores the Bloomberg clipboard snapshot taken at the start of the
+    /// current parse cycle. Safe to call from any thread; always runs on the
+    /// UI thread. If the snapshot is null or empty, this is a no-op.
+    /// </summary>
+    /// <param name="delayMs">
+    /// Extra settling delay before writing to the clipboard. Use a non-zero
+    /// value after a Bloomberg paste so that Bloomberg's Ctrl+V keystroke has
+    /// time to be consumed from its message queue before we overwrite the
+    /// clipboard with the original text.
+    /// </param>
+    public async Task RestoreClipboardAsync(int delayMs = 0)
+    {
+        var snapshot = _clipboardSnapshot;
+        if (string.IsNullOrEmpty(snapshot))
+            return;
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null)
+            return;
+
+        if (delayMs > 0)
+            await Task.Delay(delayMs);
+
+        await dispatcher.InvokeAsync(() =>
+        {
+            _suppressClipboardEvents = true;
+            try { Clipboard.SetText(snapshot); }
+            catch { /* clipboard locked by another process — skip silently */ }
+
+            // Post the flag-clear at Input priority so it runs *after* any
+            // pending WM_CLIPBOARDUPDATE messages already in the queue.
+            dispatcher.InvokeAsync(() =>
+            {
+                _suppressClipboardEvents = false;
+                ClipboardWatcher?.ResetLastSignature();
+            }, System.Windows.Threading.DispatcherPriority.Input);
+        }).Task;
+    }
+
+    // --- Bloomberg Paster ---
+
+    /// <summary>
+    /// Sends the given OVML text to the Bloomberg Terminal window.
+    /// Called from the clipboard capture dialog handler and can also
+    /// be triggered manually from the UI.
+    /// </summary>
+    public async Task<bool> SendToBloombergAsync(string ovmlText)
+    {
+        if (_bloombergPaster == null)
+        {
+            StatusMessage = "Bloomberg paster not available.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(ovmlText))
+        {
+            StatusMessage = "No OVML text to send.";
+            return false;
+        }
+
+        StatusMessage = "⏳ Sending to Bloomberg…";
+
+        _suppressClipboardEvents = true;
+        try
+        {
+            var ok = await _bloombergPaster.PasteOvmlAsync(ovmlText);
+
+            StatusMessage = ok
+                ? "✓ OVML sent to Bloomberg Terminal"
+                : "⚠ Bloomberg Terminal not found — is it running?";
+
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"⚠ Bloomberg paste failed: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            // Wait long enough for Bloomberg to consume Ctrl+V from its
+            // message queue before we overwrite the clipboard with the
+            // original text. 3 s provides a safe margin even on slow machines.
+            await RestoreClipboardAsync(delayMs: 3000);
+
+            // If RestoreClipboardAsync was a no-op (null/empty snapshot), the
+            // suppress flag is still true — clear it on the UI thread.
+            await (Application.Current?.Dispatcher
+                .InvokeAsync(() => _suppressClipboardEvents = false)
+                .Task
+                ?? Task.CompletedTask);
+        }
+    }
+
     // --- Initialization ---
 
     private async Task InitializeAsync()
     {
-        var user = Environment.UserName.ToUpperInvariant();
-        IsAdmin = user is "P901PEF" or "P901MGU";
-
-        await RefreshConnectionAsync();
-        if (IsConnected)
-        {
-            var data = await DatabaseService.LoadReferenceDataAsync();
-
-            // Must assign on the UI thread so WPF bindings update correctly
-            Application.Current.Dispatcher.Invoke(() => ReferenceData = data);
-
-            await SetupUserDefaults();
-
-            // Load portfolio for the default currency pair on all legs.
-            // This must happen AFTER the DB connection is established,
-            // because AddLegInternal runs before InitializeAsync completes.
-            foreach (var leg in Legs)
-                await leg.LoadPortfolioForCurrentPairAsync();
-        }
-
-        // Load holiday calendar (from AHS SQL Server, independent of MySQL connection)
         try
         {
-            Holidays = await DatabaseService.LoadHolidaysAsync();
-        }
-        catch
-        {
-            // Fallback: empty table — date parsing will still work for direct dates
-            Holidays = new DataTable();
-            Holidays.Columns.Add("Market", typeof(string));
-            Holidays.Columns.Add("HolidayDate", typeof(DateTime));
-        }
+            await RefreshConnectionAsync();
+            if (IsConnected)
+            {
+                var data = await DatabaseService.LoadReferenceDataAsync();
 
-        StartConnectionMonitor();
+                await (Application.Current?.Dispatcher
+                .InvokeAsync(() =>
+                {
+                    _suppressClipboardEvents = true;
+                    ReferenceData = data;
+                    _regexParser = new OvmlBuilderAP3(ReferenceData.CurrencyPairs);
+                    _suppressClipboardEvents = false;
+                })
+                .Task
+                ?? Task.CompletedTask);
+
+                await SetupUserDefaults();
+
+                foreach (var leg in Legs)
+                    await leg.LoadPortfolioForCurrentPairAsync();
+            }
+
+            // Load holiday calendar (from AHS SQL Server, independent of MySQL connection)
+            try
+            {
+                var holidays = await DatabaseService.LoadHolidaysAsync();
+                MakeReadOnly(holidays);
+                Holidays = holidays;
+            }
+            catch (Exception ex)
+            {
+                FileLogger.Instance?.Warn(Tag,
+                    $"Holidays load failed — calendar will be empty: {ex.GetType().Name}: {ex.Message}");
+                var empty = new DataTable();
+                empty.Columns.Add("Market", typeof(string));
+                empty.Columns.Add("HolidayDate", typeof(DateTime));
+                MakeReadOnly(empty);
+                Holidays = empty;
+            }
+
+            TryRestoreDraft();
+            StartAutoSaveTimer();
+            StartConnectionMonitor();
+        }
+        catch (Exception ex)
+        {
+            FileLogger.Instance?.Error(Tag,
+                $"InitializeAsync failed: {ex.GetType().Name}: {ex.Message}");
+            await SetStatusAsync($"⚠ Initialization failed: {ex.Message}");
+            throw; // re-throw so FireAndForget.onError can display it
+        }
+    }
+
+    /// <summary>
+    /// Freezes a DataTable so that rows and column values cannot be modified.
+    /// Prevents shared-state corruption when the same table is passed to
+    /// multiple <see cref="DateConvention"/> or <see cref="Calendar"/> instances.
+    /// </summary>
+    private static void MakeReadOnly(DataTable dt)
+    {
+        dt.AcceptChanges();
+        foreach (DataColumn col in dt.Columns)
+            col.ReadOnly = true;
     }
 
     private async Task SetupUserDefaults()
@@ -129,32 +534,42 @@ public partial class MainViewModel : ObservableObject
         // Wait for reference data lookup maps to be ready before triggering cross-updates.
         // The InvestmentDecisionID default (Environment.UserName) was set at construction,
         // but the lookup maps weren't loaded yet. Re-trigger now.
-        Application.Current.Dispatcher.Invoke(() =>
-        {
-            var currentUser = Environment.UserName.ToUpperInvariant();
-
-            // Resolve Trader from DB: Environment.UserName → userprofile.Mx3Id
-            string? resolvedTrader = null;
-            if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
-                && !string.IsNullOrEmpty(mx3Id))
+        await (Application.Current?.Dispatcher
+            .InvokeAsync(() =>
             {
-                resolvedTrader = mx3Id;
-            }
+                var currentUser = Environment.UserName.ToUpperInvariant();
 
-            foreach (var leg in Legs)
-            {
-                // Set Trader from DB lookup (falls back to Environment.UserName if not found)
-                if (resolvedTrader != null)
-                    leg.Trader = resolvedTrader;
+                // Resolve Trader from DB: Environment.UserName → userprofile.Mx3Id
+                string? resolvedTrader = null;
+                if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
+                    && !string.IsNullOrEmpty(mx3Id))
+                {
+                    resolvedTrader = mx3Id;
+                }
 
-                // Re-assign to trigger OnInvestmentDecisionIDChanged which sets Sales + ReportingEntity
-                var currentId = leg.InvestmentDecisionID;
-                leg.InvestmentDecisionID = string.Empty;
-                leg.InvestmentDecisionID = currentId;
-            }
-        });
+                // Resolve Calypso Book from DB: Environment.UserName → stp_calypso_book_user.CalypsoBook
+                // Fallback to "FX51" if user not found in the mapping table
+                string resolvedCalypsoBook = ReferenceData.TraderIdToCalypsoBook.TryGetValue(currentUser, out var book)
+                    ? book
+                    : "FX51";
 
-        await Task.CompletedTask;
+                foreach (var leg in Legs)
+                {
+                    // Set Trader from DB lookup (falls back to Environment.UserName if not found)
+                    if (resolvedTrader != null)
+                        leg.Trader = resolvedTrader;
+
+                    // Set Calypso Book from DB lookup
+                    leg.BookCalypso = resolvedCalypsoBook;
+
+                    // Re-assign to trigger OnInvestmentDecisionIDChanged which sets Sales + ReportingEntity
+                    var currentId = leg.InvestmentDecisionID;
+                    leg.InvestmentDecisionID = string.Empty;
+                    leg.InvestmentDecisionID = currentId;
+                }
+            })
+            .Task
+            ?? Task.CompletedTask);
     }
 
     // --- Commands ---
@@ -165,6 +580,7 @@ public partial class MainViewModel : ObservableObject
         AddLegInternal();
         RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
+        UpdateSaveValidation();
     }
 
     [RelayCommand]
@@ -196,6 +612,7 @@ public partial class MainViewModel : ObservableObject
         Legs.Add(newLeg);
         RenumberLegs();
         OnPropertyChanged(nameof(HasMultipleLegs));
+        UpdateSaveValidation();
     }
 
     [RelayCommand]
@@ -212,14 +629,107 @@ public partial class MainViewModel : ObservableObject
         TotalPremiumStyleDisplay = string.Empty;
         TotalPremiumAmountDisplay = string.Empty;
         OnPropertyChanged(nameof(TotalPremiumBrushKey));
+        UpdateSaveValidation();
+        _draftService.DeleteDraft();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanExecuteSave))]
     private async Task SaveAsync()
     {
-        // TODO: Implementeras när ny tabellstruktur är klar
-        StatusMessage = "Save not yet implemented.";
-        await Task.CompletedTask;
+        if (_ingestService == null)
+        {
+            StatusMessage = "Save unavailable — STP ingest service not configured.";
+            return;
+        }
+
+        if (!ValidateAllLegs())
+        {
+            StatusMessage = "Please fill in all required fields.";
+            return;
+        }
+
+        IsSaving = true;
+        StatusMessage = "Saving trades…";
+
+        try
+        {
+            var models = Legs.Select(l => l.ToModel()).ToList();
+            var results = await _ingestService.SubmitTradeAsync(models);
+
+            int successCount = results.Count(r => r.Success);
+            int failCount = results.Count(r => !r.Success);
+
+            if (failCount == 0)
+            {
+                var ids = string.Join(", ", results.Where(r => r.MessageInId.HasValue).Select(r => r.MessageInId));
+                StatusMessage = $"✓ Saved {successCount} trade(s) — MessageInIds: {ids}";
+                _draftService.DeleteDraft();
+            }
+            else
+            {
+                var errors = string.Join(" | ", results.Where(r => !r.Success).Select(r => r.ErrorMessage));
+                StatusMessage = $"⚠ {successCount} saved, {failCount} failed — {errors}";
+            }
+
+            // Save to recent trades (best-effort, don't block the user)
+            if (successCount > 0 && _recentTradeService != null)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await _recentTradeService.SaveRecentTradeAsync(models); }
+                    catch { /* silent — recent trade save is non-critical */ }
+                });
+            }
+
+            // Show results dialog
+            SaveResultDialogRequested?.Invoke(results, models, successCount, failCount);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Save failed: {ex.Message}";
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private bool CanExecuteSave() => !IsSaving;
+
+    [RelayCommand]
+    private void OpenRecent()
+    {
+        if (_recentTradeService == null)
+        {
+            StatusMessage = "Open Recent unavailable — trade storage not configured.";
+            return;
+        }
+
+        OpenRecentDialogRequested?.Invoke(_recentTradeService);
+    }
+
+    /// <summary>
+    /// Loads a saved trade into the current workspace, replacing all legs.
+    /// </summary>
+    public void LoadTrade(SavedTradeData tradeData)
+    {
+        CancelSolving();
+        Legs.Clear();
+
+        foreach (var model in tradeData.Legs)
+        {
+            var leg = new TradeLegViewModel(this, Legs.Count + 1);
+            leg.LoadFromModel(model);
+            Legs.Add(leg);
+        }
+
+        RenumberLegs();
+        OnPropertyChanged(nameof(HasMultipleLegs));
+        OnPropertyChanged(nameof(HasAnyHedge));
+        UpdateTotalPremium();
+        UpdateSaveValidation();
+
+        StatusMessage = $"Loaded trade: {tradeData.Legs.Count} leg(s)";
     }
 
     [RelayCommand]
@@ -246,8 +756,49 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ToggleAdminRows()
     {
-        if (IsAdmin)
-            ShowAdminRows = !ShowAdminRows;
+        ShowAdminRows = !ShowAdminRows;
+    }
+
+    [RelayCommand]
+    private void TogglePayoffChart()
+    {
+        ShowPayoffChart = !ShowPayoffChart;
+    }
+
+    /// <summary>Whether the Bloomberg paster integration is configured.</summary>
+    public bool IsBloombergAvailable => _bloombergPaster != null;
+
+    /// <summary>
+    /// Generates a combined OVML string from all current trade legs in the UI
+    /// and sends it to the Bloomberg Terminal via the clipboard paster.
+    /// </summary>
+    [RelayCommand]
+    private async Task SendAllToBloombergAsync()
+    {
+        if (_bloombergPaster == null)
+        {
+            StatusMessage = "Bloomberg paster not available.";
+            return;
+        }
+
+        if (Legs.Count == 0)
+        {
+            StatusMessage = "⚠ No legs to send — add at least one leg.";
+            return;
+        }
+
+        // Build OvmlLeg list from current UI state
+        var ovmlLegs = Legs.Select(leg => leg.ToOvmlLeg()).ToList();
+
+        var combinedOvml = OvmlBuilderAP3.RebuildOvml(ovmlLegs);
+
+        if (string.IsNullOrWhiteSpace(combinedOvml))
+        {
+            StatusMessage = "⚠ Could not generate OVML from current legs.";
+            return;
+        }
+
+        await SendToBloombergAsync(combinedOvml);
     }
 
     // --- Distributor ---
@@ -262,7 +813,8 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void SetAllCurrencyPair(string value)
     {
-        foreach (var leg in Legs) leg.CurrencyPair = value;
+        var normalized = value.Replace("/", string.Empty).ToUpperInvariant();
+        foreach (var leg in Legs) leg.CurrencyPair = normalized;
         DistributorClearRequested?.Invoke(nameof(TradeLegViewModel.CurrencyPair));
     }
 
@@ -397,6 +949,7 @@ public partial class MainViewModel : ObservableObject
             {
                 leg.IsSolvingTarget = true;
                 leg.IsPremiumLocked = false;
+                leg.SavePreSolveValues();   // snapshot before ClearSolvingField erases tracking fields
                 leg.ClearSolvingField(isByAmount);
             }
             else
@@ -448,6 +1001,7 @@ public partial class MainViewModel : ObservableObject
         {
             // The target is expressed in leg 1's premium style (pips/pct relative to leg 1's notional).
             // Convert to absolute amount, solve by amount, then convert back to the solving leg's pips/pct.
+
             var leg1 = Legs[0];
 
             // Convert target pips/pct → absolute amount using leg 1's notional
@@ -480,7 +1034,8 @@ public partial class MainViewModel : ObservableObject
         else
         {
             var solvedPremium = PremiumCalculator.CalculatePremium(
-                solvedAmount, _solvingLeg.Notional, _solvingLeg.PremiumStyle, _solvingLeg.Strike);
+                solvedAmount, _solvingLeg.Notional, _solvingLeg.PremiumStyle, _solvingLeg.Strike,
+                _solvingLeg.CurrencyPair);
 
             _solvingLeg.ApplyPremiumInput(
                 (solvedPremium ?? 0m).ToString("G29", System.Globalization.CultureInfo.InvariantCulture));
@@ -517,6 +1072,56 @@ public partial class MainViewModel : ObservableObject
         UpdateTotalPremium();
     }
 
+    // --- Quick Input Bar ---
+
+    /// <summary>Whether the quick-input text bar is visible (toggled with Ctrl+Q).</summary>
+    [ObservableProperty] private bool _showQuickInput;
+
+    /// <summary>
+    /// Raised after quick-input populates legs so the view can prompt weekend-roll
+    /// dialogs — mirrors the same pattern used by the clipboard capture flow.
+    /// </summary>
+    public event Action? QuickInputWeekendRollRequested;
+
+    [RelayCommand]
+    private void ToggleQuickInput()
+    {
+        ShowQuickInput = !ShowQuickInput;
+    }
+
+    /// <summary>
+    /// Parses the compact shorthand string and populates legs.
+    /// Called by the view when the user presses Enter in the quick-input bar.
+    /// </summary>
+    public void ApplyQuickInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return;
+
+        var result = QuickInputParser.Parse(input);
+
+        if (result.Error is not null)
+        {
+            StatusMessage = $"⚠ Quick input: {result.Error}";
+            return;
+        }
+
+        // Validate currency pair against reference data
+        var pair = result.Legs[0].Pair;
+        if (ReferenceData.CurrencyPairSet.Count > 0 &&
+            !ReferenceData.CurrencyPairSet.Contains(pair))
+        {
+            StatusMessage = $"⚠ Quick input: unknown currency pair '{pair}'";
+            return;
+        }
+
+        PopulateLegsFromParsed(result.Legs);
+        QuickInputWeekendRollRequested?.Invoke();
+
+        ShowQuickInput = false;
+        StatusMessage = $"✓ Quick input — {result.Legs.Count} leg(s) populated";
+    }
+
     // --- Internal ---
 
     private void AddLegInternal()
@@ -539,6 +1144,7 @@ public partial class MainViewModel : ObservableObject
             leg.ExecutionTime = leg1.ExecutionTime;
             leg.Mic = leg1.Mic;
             leg.Broker = leg1.Broker;
+            leg.BookCalypso = leg1.BookCalypso;
         }
         else if (ReferenceData.UserIdToFullName.Count > 0)
         {
@@ -548,6 +1154,11 @@ public partial class MainViewModel : ObservableObject
             if (ReferenceData.UserIdToMx3Id.TryGetValue(currentUser, out var mx3Id)
                 && !string.IsNullOrEmpty(mx3Id))
                 leg.Trader = mx3Id;
+
+            // Resolve Calypso Book for the current user, fallback to "FX51"
+            leg.BookCalypso = ReferenceData.TraderIdToCalypsoBook.TryGetValue(currentUser, out var book)
+                ? book
+                : "FX51";
 
             // Force trigger to populate Sales + ReportingEntity
             var currentId = leg.InvestmentDecisionID;
@@ -573,10 +1184,14 @@ public partial class MainViewModel : ObservableObject
         if (_suppressTotalPremiumUpdate) return;
 
         TotalPremium = Legs.Sum(l => l.PremiumAmount ?? 0m);
+
+        var premiumCurrency = Legs.Count > 0 ? Legs[0].PremiumCurrency : string.Empty;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+
         TotalPremiumDisplay = TotalPremium switch
         {
-            > 0 => $"Client receives {TotalPremium:N2}",
-            < 0 => $"Client pays {Math.Abs(TotalPremium):N2}",
+            > 0 => $"Client receives {TotalPremium.ToString("N2", inv)} {premiumCurrency}",
+            < 0 => $"Client pays {Math.Abs(TotalPremium).ToString("N2", inv)} {premiumCurrency}",
             _ => "Zero cost"
         };
 
@@ -613,47 +1228,399 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HasMultipleLegs));
         OnPropertyChanged(nameof(TotalPremiumBrushKey));
+
+        UpdateSaveValidation();
+    }
+
+    /// <summary>
+    /// Re-evaluates whether all required fields are filled and updates
+    /// <see cref="CanSave"/> and <see cref="SaveValidationTooltip"/>.
+    /// Called whenever a leg property changes.
+    /// </summary>
+    public void UpdateSaveValidation()
+    {
+        var missing = new List<string>();
+        bool multiLeg = Legs.Count > 1;
+
+        foreach (var leg in Legs)
+        {
+            string prefix = multiLeg ? $"Leg {leg.LegNumber}: " : "";
+
+            var legMissing = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(leg.Counterpart))
+                legMissing.Add($"{prefix}Counterpart");
+            if (string.IsNullOrWhiteSpace(leg.CurrencyPair))
+                legMissing.Add($"{prefix}Currency Pair");
+            if (!leg.Strike.HasValue)
+                legMissing.Add($"{prefix}Strike");
+            if (!leg.ExpiryDate.HasValue)
+                legMissing.Add($"{prefix}Expiry");
+            if (!leg.Notional.HasValue)
+                legMissing.Add($"{prefix}Notional");
+            if (!leg.PremiumAmount.HasValue)
+                legMissing.Add($"{prefix}Premium");
+
+            if (leg.Hedge != HedgeType.No)
+            {
+                if (!leg.HedgeNotional.HasValue)
+                    legMissing.Add($"{prefix}Hedge Notional");
+                if (!leg.HedgeRate.HasValue)
+                    legMissing.Add($"{prefix}Hedge Rate");
+                if (!leg.HedgeSettlementDate.HasValue)
+                    legMissing.Add($"{prefix}Hedge Settlement Date");
+            }
+
+            // Clear the triangle only if it was showing and the leg is now valid
+            if (leg.HasValidationError && legMissing.Count == 0)
+                leg.HasValidationError = false;
+
+            missing.AddRange(legMissing);
+        }
+
+        CanSave = missing.Count == 0;
+        SaveValidationTooltip = missing.Count == 0
+            ? string.Empty
+            : "Missing fields:\n" + string.Join("\n", missing.Select(m => $"  • {m}"));
     }
 
     public void NotifyLegChanged()
     {
         OnPropertyChanged(nameof(HasAnyHedge));
+        UpdateSaveValidation();
     }
 
     private bool ValidateAllLegs()
     {
         bool allValid = true;
+
         foreach (var leg in Legs)
         {
             bool valid = !string.IsNullOrWhiteSpace(leg.Counterpart)
                       && !string.IsNullOrWhiteSpace(leg.CurrencyPair)
                       && leg.Strike.HasValue
                       && leg.ExpiryDate.HasValue
-                      && leg.Notional.HasValue;
+                      && leg.Notional.HasValue
+                      && leg.PremiumAmount.HasValue;
+
+            if (leg.Hedge != HedgeType.No)
+            {
+                valid = valid
+                    && leg.HedgeNotional.HasValue
+                    && leg.HedgeRate.HasValue
+                    && leg.HedgeSettlementDate.HasValue;
+            }
+
             leg.HasValidationError = !valid;
             if (!valid) allValid = false;
         }
+
+        UpdateSaveValidation();
         return allValid;
     }
 
     // --- Connection Monitor ---
 
-    private System.Timers.Timer? _connectionTimer;
+    private System.Windows.Threading.DispatcherTimer? _connectionTimer;
+
+    // --- Auto-Save Draft ---
+
+    /// <summary>Default auto-save interval in minutes. Adjust to taste or expose via AppSettings.</summary>
+    private const int AutoSaveIntervalMinutes = 3;
+
+    private readonly DraftService _draftService = new();
+
+    private System.Windows.Threading.DispatcherTimer? _autoSaveTimer;
+
+    /// <summary>
+    /// Persists the current workspace to the draft file on application close.
+    /// Only saves when there is at least one leg with meaningful data.
+    /// Called by the view's Closing handler — do not call from elsewhere.
+    /// </summary>
+    public async Task SaveDraftOnCloseAsync()
+    {
+        if (Legs.Count == 0)
+            return;
+
+        var legs = Legs.Select(l => l.ToModel()).ToList();
+
+        // Skip the save if the workspace is still in its default blank state —
+        // restoring it would give the user nothing they didn't already have.
+        if (IsDefaultDraft(new DraftData(DateTime.Now, Legs[0].Counterpart, legs)))
+            return;
+
+        await _draftService.SaveDraftAsync(legs, Legs[0].Counterpart);
+    }
 
     private void StartConnectionMonitor()
     {
-        _connectionTimer = new System.Timers.Timer(6000);
-        _connectionTimer.Elapsed += async (_, _) =>
+        _connectionTimer = new System.Windows.Threading.DispatcherTimer
         {
-            var connected = await DatabaseService.TestConnectionAsync();
-            IsConnected = connected;
-            _connectionTimer!.Interval = connected ? 600_000 : 60_000;
+            Interval = TimeSpan.FromSeconds(6)
         };
+        _connectionTimer.Tick += OnConnectionTimerTick;
         _connectionTimer.Start();
     }
 
-    private async Task RefreshConnectionAsync()
+    /// <summary>
+    /// Named handler so the async Task can be properly observed.
+    /// An inline <c>async (_, _) =&gt; { ... }</c> on Tick is <c>async void</c> —
+    /// any exception escapes as unhandled and crashes the app.
+    /// </summary>
+    private void OnConnectionTimerTick(object? sender, EventArgs e)
+    {
+        ConnectionMonitorCycleAsync().FireAndForget(
+            onError: msg => StatusMessage = $"⚠ Connection monitor error: {msg}");
+    }
+
+    private async Task ConnectionMonitorCycleAsync()
+    {
+        _connectionTimer!.Stop();
+        var connected = await DatabaseService.TestConnectionAsync();
+        IsConnected = connected;
+        _connectionTimer.Interval = connected
+            ? TimeSpan.FromMinutes(10)
+            : TimeSpan.FromMinutes(1);
+        _connectionTimer.Start();
+    }
+
+    public void Dispose()
+    {
+        if (_connectionTimer is not null)
+        {
+            _connectionTimer.Stop();
+            _connectionTimer.Tick -= OnConnectionTimerTick;
+            _connectionTimer = null;
+        }
+
+        if (_clipboardWatcher is not null)
+        {
+            _clipboardWatcher.ClipboardChanged -= OnClipboardChanged;
+            _clipboardWatcher.Dispose(); // Stop() + HwndSource.Dispose() + native window cleanup
+        }
+
+        if (_autoSaveTimer is not null)
+        {
+            _autoSaveTimer.Stop();
+            _autoSaveTimer.Tick -= OnAutoSaveTick;
+            _autoSaveTimer = null;
+        }
+
+        _ingestService?.Dispose();
+        (_aiParser as IDisposable)?.Dispose();
+        _draftService.Dispose();
+    }
+
+    public async Task RefreshConnectionAsync()
     {
         IsConnected = await DatabaseService.TestConnectionAsync();
     }
+
+    /// <summary>
+    /// Replaces all legs in the workspace with the parsed result from a clipboard capture.
+    /// Preserves admin defaults (Trader, Sales, etc.) from any existing Leg 1.
+    /// Must be called on the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// Admin defaults (Trader, BookCalypso, Mic, Broker, ExecutionTime) are intentionally
+    /// preserved across a clipboard-triggered rebuild. The snapshot is taken from Legs[0]
+    /// BEFORE Legs.Clear(), which means it captures whatever SetupUserDefaults() resolved
+    /// from the database (Mx3Id, CalypsoBook) at startup — not the raw Environment.UserName
+    /// constructor defaults. No admin data is lost.
+    ///
+    /// Note: Sales and ReportingEntity are NOT snapshotted here; they are re-derived from
+    /// the Bloomberg sender name in the clipboard header (or re-triggered via the
+    /// InvestmentDecisionID double-assignment pattern) so they always reflect the current
+    /// trade's counterpart rather than the previous trade's.
+    /// </remarks>
+    public void PopulateLegsFromParsed(IReadOnlyList<OvmlLeg> legs)
+    {
+        CancelSolving();
+
+        // ── Capture existing admin defaults before clearing ─────────────────
+        // Snapshot is taken from Legs[0] while it still holds the DB-resolved values
+        // set by SetupUserDefaults() (Trader = Mx3Id, BookCalypso from DB lookup).
+        // These are applied to every new leg below so no admin data is lost.
+        var adminTrader = Legs.Count > 0 ? Legs[0].Trader : string.Empty;
+        var adminExecTime = Legs.Count > 0 ? Legs[0].ExecutionTime : string.Empty;
+        var adminMic = Legs.Count > 0 ? Legs[0].Mic : string.Empty;
+        var adminBroker = Legs.Count > 0 ? Legs[0].Broker : string.Empty;
+        var adminCalypso = Legs.Count > 0 ? Legs[0].BookCalypso : string.Empty;
+
+        // ── Resolve Sales + ReportingEntity from Bloomberg sender name ──────
+        // Try the Bloomberg name from the clipboard header first.
+        // When the message has no sender name (nameless Bloomberg text), fall back
+        // to Environment.UserName so that InvestmentDecisionID, Sales and
+        // ReportingEntity are all reset to the current-user defaults via lookup.
+        var senderName = legs.FirstOrDefault()?.SenderName ?? string.Empty;
+
+        string? resolvedSales = null;
+        string? resolvedReporting = null;
+        var adminDecisionId = Environment.UserName.ToUpperInvariant();
+
+        if (!string.IsNullOrEmpty(senderName)
+            && ReferenceData.BloombergNameToSalesFullName.TryGetValue(senderName, out var mappedFullName))
+        {
+            resolvedSales = mappedFullName;
+
+            // Resolve the ReportingEntity that belongs to the Sales person, not the trader
+            if (ReferenceData.FullNameToUserId.TryGetValue(mappedFullName, out var salesUserId)
+                && ReferenceData.UserIdToReportingEntity.TryGetValue(salesUserId, out var salesReporting)
+                && !string.IsNullOrEmpty(salesReporting))
+            {
+                resolvedReporting = salesReporting;
+            }
+
+            FileLogger.Instance?.Info(Tag,
+                $"Bloomberg sender '{senderName}' → Sales '{mappedFullName}', ReportingEntity '{resolvedReporting}'.");
+        }
+
+        Legs.Clear();
+
+        foreach (var ovmlLeg in legs)
+        {
+            var vm = new TradeLegViewModel(this, Legs.Count + 1);
+
+            // Force OnInvestmentDecisionIDChanged to fire even when adminDecisionId matches
+            // the field default (Environment.UserName) set at construction — same pattern as
+            // SetupUserDefaults. This triggers the Sales + ReportingEntity lookup.
+            vm.Trader = adminTrader;
+            vm.InvestmentDecisionID = string.Empty;
+            vm.InvestmentDecisionID = adminDecisionId;
+            vm.ExecutionTime = adminExecTime;
+            vm.Mic = adminMic;
+            vm.Broker = adminBroker;
+            vm.BookCalypso = adminCalypso;
+
+            vm.ApplyFromOvmlLeg(ovmlLeg);
+
+            // If a Bloomberg sender was resolved, override the lookup values last
+            // so the Sales-person's values win over the current-user defaults.
+            if (resolvedSales is not null)
+                vm.Sales = resolvedSales;
+            if (resolvedReporting is not null)
+                vm.ReportingEntity = resolvedReporting;
+
+            Legs.Add(vm);
+        }
+
+        RenumberLegs();
+        OnPropertyChanged(nameof(HasMultipleLegs));
+        OnPropertyChanged(nameof(HasAnyHedge));
+        UpdateTotalPremium();
+        UpdateSaveValidation();
+    }
+
+    /// <summary>Exposed so the view can reset the deduplication signature after dialog interaction.</summary>
+    public IClipboardWatcher? ClipboardWatcher => _clipboardWatcher;
+
+    private void StartAutoSaveTimer()
+    {
+        _autoSaveTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(AutoSaveIntervalMinutes)
+        };
+        _autoSaveTimer.Tick += OnAutoSaveTick;
+        _autoSaveTimer.Start();
+    }
+
+    private void OnAutoSaveTick(object? sender, EventArgs e)
+    {
+        if (Legs.Count == 0) return;
+
+        // Skip if a previous save is still in progress — avoids queuing behind
+        // a stalled I/O operation on the SemaphoreSlim in DraftService.
+        if (_draftService.IsSaving) return;
+
+        var legs = Legs.Select(l => l.ToModel()).ToList();
+        var counterpart = Legs[0].Counterpart;
+
+        // Fire-and-forget; errors are swallowed inside DraftService
+        _ = _draftService.SaveDraftAsync(legs, counterpart);
+    }
+
+    /// <summary>
+    /// Checks for a saved draft on startup and offers to restore it.
+    /// Must be called on the UI thread (shows a MessageBox).
+    /// </summary>
+    private void TryRestoreDraft()
+    {
+        if (!_draftService.TryLoadDraft(out var draft) || draft is null)
+            return;
+
+        // Ignore drafts from previous days — they are no longer relevant.
+        if (draft.SavedAt.Date != DateTime.Today)
+        {
+            _draftService.DeleteDraft();
+            return;
+        }
+
+        // Skip dialog if the draft is identical to the default blank workspace.
+        if (IsDefaultDraft(draft))
+        {
+            _draftService.DeleteDraft();
+            return;
+        }
+
+        var dialog = new Views.RestoreDraftDialog(draft) { Owner = Application.Current.MainWindow };
+        dialog.ShowDialog();
+
+        // User closed the dialog without choosing — keep the draft intact.
+        if (dialog.WasDismissed)
+            return;
+
+        if (dialog.ShouldRestore)
+        {
+            LoadLegsFromModels(draft.Legs);
+            StatusMessage = $"Draft from {draft.SavedAt:HH:mm} restored.";
+        }
+        else
+        {
+            _draftService.DeleteDraft();
+        }
+    }
+
+    /// <summary>
+    /// Returns true when the draft contains only the application's initial
+    /// default state (one blank EURSEK Buy Call leg) and therefore carries
+    /// no meaningful user data worth restoring.
+    /// </summary>
+    private static bool IsDefaultDraft(DraftData draft)
+    {
+        if (draft.Legs.Count != 1)
+            return false;
+
+        var leg = draft.Legs[0];
+
+        return leg.CurrencyPair is "EURSEK" or ""
+            && leg.BuySell == BuySell.Buy
+            && leg.CallPut == CallPut.Call
+            && !leg.Strike.HasValue
+            && !leg.ExpiryDate.HasValue
+            && !leg.Notional.HasValue;
+    }
+
+    /// <summary>
+    /// Replaces all legs with the supplied models, mirroring the LoadTrade flow.
+    /// </summary>
+    private void LoadLegsFromModels(IReadOnlyList<TradeLeg> models)
+    {
+        CancelSolving();
+        Legs.Clear();
+
+        foreach (var model in models)
+        {
+            var leg = new TradeLegViewModel(this, Legs.Count + 1);
+            leg.LoadFromModel(model);
+            Legs.Add(leg);
+        }
+
+        RenumberLegs();
+        OnPropertyChanged(nameof(HasMultipleLegs));
+        OnPropertyChanged(nameof(HasAnyHedge));
+        UpdateTotalPremium();
+        UpdateSaveValidation();
+    }
+
+
 }

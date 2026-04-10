@@ -1,0 +1,131 @@
+﻿<Window x:Class="FxTradeConfirmation.Views.OpenRecentDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Open Recent Trade" Width="720" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        KeyDown="Window_KeyDown">
+
+    <Border Background="{StaticResource BgCardBrush}"
+            BorderBrush="{StaticResource AccentBlueBrush}"
+            BorderThickness="1" CornerRadius="12" Padding="24">
+        <StackPanel>
+            <!-- Header -->
+            <DockPanel Margin="0,0,0,12">
+                <Button Content="✕" DockPanel.Dock="Right"
+                        Style="{StaticResource IconButton}"
+                        Foreground="{StaticResource TextMutedBrush}"
+                        Click="Cancel_Click" ToolTip="Close (Esc)"
+                        VerticalAlignment="Top"/>
+                <TextBlock Text="Open Recent Trade"
+                           Style="{StaticResource FieldLabel}"
+                           FontSize="14" FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+
+            <!-- Filter bar -->
+            <DockPanel Margin="0,0,0,10">
+                <CheckBox x:Name="MyTradesOnly" Content="Show only my trades"
+                          Foreground="{StaticResource TextSecondaryBrush}"
+                          FontFamily="{StaticResource MainFont}" FontSize="11"
+                          VerticalAlignment="Center" IsChecked="True"
+                          Checked="Filter_Changed" Unchecked="Filter_Changed"
+                          DockPanel.Dock="Left" Margin="0,0,16,0"/>
+                <TextBox x:Name="SearchBox" Style="{StaticResource TradingTextBox}"
+                         FontSize="11" Height="28"
+                         Tag="Search…"
+                         TextChanged="Filter_Changed"/>
+            </DockPanel>
+
+            <!-- Trade list -->
+            <Border Background="{StaticResource BgInputBrush}"
+                    BorderBrush="{StaticResource BorderSubtleBrush}"
+                    BorderThickness="1" CornerRadius="4"
+                    MaxHeight="340">
+                <ListView x:Name="TradeList"
+                          Background="Transparent"
+                          BorderThickness="0"
+                          Foreground="{StaticResource TextPrimaryBrush}"
+                          FontFamily="{StaticResource MonoFont}"
+                          FontSize="11"
+                          SelectionMode="Single"
+                          MouseDoubleClick="TradeList_DoubleClick"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="USER" Width="75"
+                                DisplayMemberBinding="{Binding Username}"/>
+                            <GridViewColumn Header="SAVED" Width="120"
+                                DisplayMemberBinding="{Binding SavedDate, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}"/>
+                            <GridViewColumn Header="COUNTERPARTY" Width="110"
+                                DisplayMemberBinding="{Binding Counterparty}"/>
+                            <GridViewColumn Header="PAIR" Width="70"
+                                DisplayMemberBinding="{Binding CurrencyPair}"/>
+                            <GridViewColumn Header="LEGS" Width="45"
+                                DisplayMemberBinding="{Binding LegCount}"/>
+                            <GridViewColumn Header="STRUCTURE" Width="160"
+                                DisplayMemberBinding="{Binding LegSummary}"/>
+                            <GridViewColumn Header="EXPIRY" Width="90"
+                                DisplayMemberBinding="{Binding ExpiryDate, StringFormat='{}{0:yyyy-MM-dd}'}"/>
+                        </GridView>
+                    </ListView.View>
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="Padding" Value="4,3"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListViewItem">
+                                        <Border x:Name="Bd"
+                                                Background="{TemplateBinding Background}"
+                                                Padding="{TemplateBinding Padding}"
+                                                SnapsToDevicePixels="True">
+                                            <GridViewRowPresenter VerticalAlignment="Center"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background"
+                                                        Value="{StaticResource BgHoverBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Bd" Property="Background"
+                                                        Value="{StaticResource AccentBlueMutedBrush}"/>
+                                                <Setter Property="Foreground"
+                                                        Value="{StaticResource TextWhiteBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                </ListView>
+            </Border>
+
+            <!-- Status / Error -->
+            <TextBlock x:Name="StatusLabel"
+                       FontSize="11" FontFamily="{StaticResource MonoFont}"
+                       Foreground="{StaticResource TextMutedBrush}"
+                       Margin="0,8,0,0" Visibility="Collapsed"/>
+
+            <!-- Buttons -->
+            <DockPanel Margin="0,16,0,0">
+                <Button Content="DELETE SELECTED" Style="{StaticResource ToolbarDangerButton}"
+                        Click="Delete_Click" Width="130"
+                        DockPanel.Dock="Left"
+                        ToolTip="Remove selected entry from the list"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Button Content="OPEN" Style="{StaticResource TradingButton}"
+                            Click="Open_Click" Width="100" Margin="0,0,8,0"/>
+                    <Button Content="CANCEL" Style="{StaticResource DangerButton}"
+                            Click="Cancel_Click" Width="100"/>
+                </StackPanel>
+            </DockPanel>
+
+        </StackPanel>
+    </Border>
+</Window>

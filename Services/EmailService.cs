@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using System.Text;
 using FxTradeConfirmation.Models;
+using System.Runtime.InteropServices;
 
 namespace FxTradeConfirmation.Services;
 
@@ -16,27 +17,41 @@ public class EmailService : IEmailService
         var outlookType = Type.GetTypeFromProgID("Outlook.Application")
             ?? throw new InvalidOperationException("Outlook is not installed or not registered.");
 
-        dynamic app = Activator.CreateInstance(outlookType)!;
-        dynamic mail = app.CreateItem(0); // olMailItem
+        dynamic? app = null;
+        dynamic? mail = null;
 
-        var ccyPair = legs[0].CurrencyPair;
-        var tradeDate = DateTime.Now.ToShortDateString();
+        try
+        {
+            app = Activator.CreateInstance(outlookType)!;
+            mail = app.CreateItem(0); // olMailItem
 
-        mail.Subject = $"FX Option Trade Confirmation {tradeDate} - {ccyPair}";
+            var ccyPair = legs[0].CurrencyPair;
+            var tradeDate = DateTime.Now.ToShortDateString();
 
-        // BCC all email addresses from DB
-        var bccAddresses = string.Join(";", referenceData.EmailAddresses);
-        if (!string.IsNullOrEmpty(bccAddresses))
-            mail.BCC = bccAddresses;
+            mail.Subject = $"FX Option Trade Confirmation {tradeDate} - {ccyPair}";
 
-        mail.CC = $"{Environment.UserName}";
+            // BCC all email addresses from DB
+            var bccAddresses = string.Join(";", referenceData.EmailAddresses);
+            if (!string.IsNullOrEmpty(bccAddresses))
+                mail.BCC = bccAddresses;
 
-        // DRAX broker gets specific To-addresses
-        if (legs.Any(l => l.Broker == "DRAX"))
-            mail.To = "Fxsales@jbdh.com; middleoffice@jbdh.com; fxpb1@natwestmarkets.com";
+            mail.CC = $"{Environment.UserName}";
 
-        mail.HTMLBody = BuildHtmlBody(legs);
-        mail.Display();
+            // DRAX broker gets specific To-addresses
+            if (legs.Any(l => l.Broker == "DRAX"))
+                mail.To = "Fxsales@jbdh.com; middleoffice@jbdh.com; fxpb1@natwestmarkets.com";
+
+            mail.HTMLBody = BuildHtmlBody(legs);
+            mail.Display();
+        }
+        finally
+        {
+            if (mail is not null)
+                Marshal.ReleaseComObject(mail);
+
+            if (app is not null)
+                Marshal.ReleaseComObject(app);
+        }
     }
 
     private static string BuildHtmlBody(IReadOnlyList<TradeLeg> legs)

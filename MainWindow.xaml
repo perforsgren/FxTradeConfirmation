@@ -21,6 +21,18 @@
                       CornerRadius="0"/>
     </WindowChrome.WindowChrome>
 
+    <Window.InputBindings>
+        <KeyBinding Key="S" Modifiers="Ctrl" Command="{Binding SaveCommand}"/>
+        <KeyBinding Key="N" Modifiers="Ctrl" Command="{Binding AddLegCommand}"/>
+        <KeyBinding Key="O" Modifiers="Ctrl" Command="{Binding OpenRecentCommand}"/>
+        <KeyBinding Key="M" Modifiers="Ctrl" Command="{Binding SendMailCommand}"/>
+        <KeyBinding Key="D" Modifiers="Ctrl" Command="{Binding ToggleAdminRowsCommand}"/>
+        <KeyBinding Key="P" Modifiers="Ctrl" Command="{Binding TogglePayoffChartCommand}"/>
+        <KeyBinding Key="B" Modifiers="Ctrl" Command="{Binding SendAllToBloombergCommand}"/>
+        <KeyBinding Key="W" Modifiers="Ctrl" Command="{Binding ClearAllCommand}"/>
+        <KeyBinding Key="Q" Modifiers="Ctrl" Command="{Binding ToggleQuickInputCommand}"/>
+    </Window.InputBindings>
+
     <Window.Resources>
         <conv:PremiumColorConverter x:Key="PremiumColor"/>
     </Window.Resources>
@@ -35,10 +47,19 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="32"/>
+                <!-- 0: Title bar -->
                 <RowDefinition Height="Auto"/>
+                <!-- 1: Toolbar -->
                 <RowDefinition Height="Auto"/>
+                <!-- 2: Main grid -->
                 <RowDefinition Height="Auto"/>
+                <!-- 3: Payoff chart -->
                 <RowDefinition Height="Auto"/>
+                <!-- 4: Total premium -->
+                <RowDefinition Height="Auto"/>
+                <!-- 5: Quick input (collapsible) -->
+                <RowDefinition Height="Auto"/>
+                <!-- 6: Status bar -->
             </Grid.RowDefinitions>
 
             <!-- === CUSTOM WINDOW CHROME TITLE BAR === -->
@@ -93,8 +114,13 @@
                     <!-- Right-aligned primary actions -->
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                         HorizontalAlignment="Right" VerticalAlignment="Center">
+
                         <Button Style="{StaticResource ToolbarPrimaryButton}"
-                        Command="{Binding SaveCommand}" Margin="4,0,0,0">
+                        Command="{Binding SaveCommand}" Margin="4,0,0,0"
+                        IsEnabled="{Binding CanSave}"
+                        ToolTipService.ShowOnDisabled="True"
+                        ToolTipService.InitialShowDelay="200"
+                        ToolTip="{Binding SaveValidationTooltip, Converter={StaticResource StringToTooltip}}">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="M2,0 H10 L12,2 V14 H0 V0 Z M4,0 V4 H9 V0 M2,8 H10 V14 H2 Z"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -104,6 +130,7 @@
                                 <TextBlock Text="Save" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
+
                     </StackPanel>
 
                     <!-- Left-aligned secondary actions -->
@@ -135,38 +162,64 @@
                         <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
                         Margin="8,2"/>
 
-                        <Button Style="{StaticResource ToolbarButton}"
-                        Command="{Binding SendMailCommand}" Margin="4,0">
+                        <!-- Actions dropdown -->
+                        <Button x:Name="ActionsButton"
+                                Style="{StaticResource ToolbarDropdownButton}"
+                                Margin="4,0"
+                                Click="OnActionsDropdownClick">
                             <StackPanel Orientation="Horizontal">
-                                <Path Data="M0,2 L7,8 L14,2 M0,2 H14 V12 H0 Z"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1" Fill="Transparent"
-                              Width="12" Height="10" Stretch="Uniform"
-                              Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="Mail" VerticalAlignment="Center"/>
+                                <Path Data="M0,1 H12 M0,5 H10 M0,9 H8"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1.2" Fill="Transparent"
+                                      Width="11" Height="11" Stretch="Uniform"
+                                      Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Actions" VerticalAlignment="Center"/>
+                                <Path Data="M 0 0 L 4 4 L 8 0"
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                      StrokeThickness="1" Fill="Transparent"
+                                      Width="8" Height="5" Stretch="Uniform"
+                                      Margin="6,1,0,0" VerticalAlignment="Center"/>
                             </StackPanel>
+
+                            <Button.ContextMenu>
+                                <ContextMenu x:Name="ActionsMenu"
+                                             Style="{StaticResource DarkContextMenu}"
+                                             Placement="Bottom">
+                                    <MenuItem Style="{StaticResource DarkMenuItem}"
+                                              Header="Open Recent"
+                                              InputGestureText="Ctrl+O"
+                                              Command="{Binding OpenRecentCommand}"/>
+                                    <MenuItem Style="{StaticResource DarkMenuItem}"
+                                              Header="Send Mail"
+                                              InputGestureText="Ctrl+M"
+                                              Command="{Binding SendMailCommand}"/>
+                                    <MenuItem Style="{StaticResource DarkMenuItem}"
+                                              Header="{Binding ToggleDetailsLabel}"
+                                              InputGestureText="Ctrl+D"
+                                              Command="{Binding ToggleAdminRowsCommand}"/>
+                                    <Separator Style="{StaticResource DarkMenuSeparator}"/>
+                                    <MenuItem Style="{StaticResource DarkMenuItem}"
+                                              Header="{Binding TogglePayoffLabel}"
+                                              InputGestureText="Ctrl+P"
+                                              Command="{Binding TogglePayoffChartCommand}"/>
+                                    <Separator Style="{StaticResource DarkMenuSeparator}"/>
+                                    <MenuItem Style="{StaticResource DarkMenuItem}"
+                                              Header="Send to OVML"
+                                              InputGestureText="Ctrl+B"
+                                              Command="{Binding SendAllToBloombergCommand}"
+                                              IsEnabled="{Binding IsBloombergAvailable}"/>
+                                    <MenuItem Style="{StaticResource DarkMenuItem}"
+                                              Header="Quick Input"
+                                              InputGestureText="Ctrl+Q"
+                                              Command="{Binding ToggleQuickInputCommand}"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
+
                         </Button>
 
-                        <Border Width="1" Background="{StaticResource BorderDefaultBrush}"
-                        Margin="8,2"/>
-
-                        <Button Style="{StaticResource ToolbarButton}"
-                        Command="{Binding ToggleAdminRowsCommand}"
-                        Visibility="{Binding IsAdmin, Converter={StaticResource BoolToVis}}"
-                        Margin="4,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Path Data="M7,0 A2,2 0 1,1 7,4 A2,2 0 1,1 7,0 M3,9 A5,5 0 0,1 11,9"
-                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                              StrokeThickness="1.2" Fill="Transparent"
-                              Width="11" Height="11" Stretch="Uniform"
-                              Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="Admin" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
                     </StackPanel>
                 </DockPanel>
             </Border>
-
 
             <!-- === MAIN GRID AREA === -->
             <ScrollViewer x:Name="GridScrollViewer" Grid.Row="2"
@@ -176,8 +229,12 @@
                 <views:TradeGridControl DataContext="{Binding}"/>
             </ScrollViewer>
 
+            <!-- === P&L PAYOFF CHART (collapsible) === -->
+            <views:PayoffChartControl Grid.Row="3" DataContext="{Binding}"
+                                      Visibility="{Binding ShowPayoffChart, Converter={StaticResource BoolToVis}}"/>
+
             <!-- === TOTAL PREMIUM BAR === -->
-            <Border Grid.Row="3" Background="{StaticResource BgDarkBrush}"
+            <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
                     Padding="16,8" BorderBrush="{StaticResource BorderDefaultBrush}"
                     BorderThickness="0,1,0,0"
                     Visibility="{Binding HasMultipleLegs, Converter={StaticResource BoolToVis}}">
@@ -193,24 +250,111 @@
                 </DockPanel>
             </Border>
 
+            <!-- === QUICK INPUT BAR (Ctrl+Q, collapsible) === -->
+            <Border Grid.Row="5" Background="{StaticResource BgDarkBrush}"
+                    Padding="8,5" BorderBrush="{StaticResource BorderDefaultBrush}"
+                    BorderThickness="0,1,0,0"
+                    Visibility="{Binding ShowQuickInput, Converter={StaticResource BoolToVis}}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Text="⚡"
+                               FontSize="13" VerticalAlignment="Center"
+                               Foreground="{StaticResource SolvingAmberBrush}"
+                               Margin="0,0,6,0"/>
+                    <Button DockPanel.Dock="Right"
+                            Style="{StaticResource CaptionButton}"
+                            Width="22" Height="22"
+                            Command="{Binding ToggleQuickInputCommand}"
+                            VerticalAlignment="Center" Margin="4,0,0,0">
+                        <Path Data="M 0 0 L 8 8 M 0 8 L 8 0"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1" Width="8" Height="8" Stretch="Uniform"/>
+                    </Button>
+                    <TextBlock DockPanel.Dock="Right" Text="Esc to close"
+                               FontSize="10" VerticalAlignment="Center"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Margin="8,0,6,0"/>
+                    <TextBox x:Name="QuickInputBox"
+                             FontFamily="{StaticResource MonoFont}"
+                             FontSize="12"
+                             Background="{StaticResource BgInputBrush}"
+                             Foreground="{StaticResource TextPrimaryBrush}"
+                             CaretBrush="{StaticResource TextPrimaryBrush}"
+                             BorderBrush="{StaticResource AccentBlueBrush}"
+                             BorderThickness="1"
+                             Padding="6,3"
+                             VerticalContentAlignment="Center"
+                             KeyDown="OnQuickInputKeyDown"/>
+                </DockPanel>
+            </Border>
+
             <!-- === STATUS BAR === -->
-            <Border Grid.Row="4" Background="{StaticResource BgDarkBrush}"
+            <Border Grid.Row="6" Background="{StaticResource BgDarkBrush}"
                     Padding="16,6" BorderBrush="{StaticResource BorderDefaultBrush}"
                     BorderThickness="0,1,0,0">
                 <DockPanel>
-                    <TextBlock Text="{Binding StatusMessage}"
-                               Foreground="{StaticResource TextMutedBrush}" FontSize="11"
-                               VerticalAlignment="Center"/>
 
+                    <!-- Right-aligned status items — must be declared BEFORE the
+                         fill element so DockPanel reserves space on the right first. -->
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                 HorizontalAlignment="Right" VerticalAlignment="Center">
+
+                        <!-- Bloomberg watcher toggle -->
+                        <ToggleButton Command="{Binding ToggleClipboardWatcherCommand}"
+                                      Cursor="Hand" Margin="0,0,10,0"
+                                      Focusable="True"
+                                      AutomationProperties.Name="Toggle Bloomberg clipboard monitor">
+                            <ToggleButton.Style>
+                                <Style TargetType="ToggleButton">
+                                    <Setter Property="IsChecked" Value="{Binding ClipboardMonitorEnabled, Mode=OneWay}"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ToggleButton">
+                                                <StackPanel Orientation="Horizontal"
+                                                            VerticalAlignment="Center"
+                                                            Background="Transparent">
+                                                    <Ellipse x:Name="Dot"
+                                                             Width="7" Height="7"
+                                                             Margin="0,0,5,0"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{StaticResource TextMutedBrush}"/>
+                                                    <TextBlock x:Name="Label"
+                                                               FontSize="11"
+                                                               FontFamily="{StaticResource MonoFont}"
+                                                               VerticalAlignment="Center"
+                                                               Width="150"
+                                                               Text="MONITOR PAUSED — Ctrl+V"
+                                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                                </StackPanel>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter TargetName="Dot"   Property="Fill"       Value="{StaticResource SolvingAmberBrush}"/>
+                                                        <Setter TargetName="Label" Property="Text"       Value="BLOOMBERG MONITOR ON  "/>
+                                                        <Setter TargetName="Label" Property="Foreground" Value="{StaticResource SolvingAmberBrush}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ToggleButton.Style>
+                        </ToggleButton>
+
                         <Ellipse Style="{StaticResource ConnectionDot}" Margin="0,0,6,0"/>
                         <TextBlock Text="{Binding IsConnected, Converter={StaticResource BoolToConnectionText}}"
                                    Foreground="{StaticResource TextMutedBrush}" FontSize="11"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
+
+                    <!-- Status message fills remaining left space — declared LAST -->
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"
+                               VerticalAlignment="Center"/>
+
                 </DockPanel>
             </Border>
+
         </Grid>
     </Border>
 </Window>

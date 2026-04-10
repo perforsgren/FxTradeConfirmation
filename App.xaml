@@ -13,6 +13,7 @@
             <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
             <converters:EnumToBoolConverter x:Key="EnumToBool"/>
             <converters:BoolToConnectionTextConverter x:Key="BoolToConnectionText"/>
+            <converters:StringToTooltipConverter x:Key="StringToTooltip"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

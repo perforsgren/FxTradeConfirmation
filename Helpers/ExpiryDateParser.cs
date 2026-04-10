@@ -47,10 +47,24 @@ public static class ExpiryDateParser
             if (tenorMatch.Success)
                 return dc.GetConvention(trimmed);
 
-            // Try to parse as a date in various formats, then pass to GetConvention
+            // Explicit date — parse and return the EXACT date the user typed
+            // as ExpiryDate. Only use DateConvention for settlement/spot.
             DateTime? parsedDate = TryParseDate(trimmed);
             if (parsedDate.HasValue)
-                return dc.GetConvention(parsedDate.Value.ToString("yyyy-MM-dd"));
+            {
+                var expiryDate = parsedDate.Value;
+                var spotDate = dc.getForwardDate(DateTime.Today, dc.TAdd);
+                var deliveryDate = dc.getForwardDate(expiryDate, dc.TAdd);
+                int days = (int)Math.Round((expiryDate - DateTime.Today).TotalDays, MidpointRounding.AwayFromZero);
+
+                return new Convention
+                {
+                    SpotDate = spotDate,
+                    ExpiryDate = expiryDate,
+                    DeliveryDate = deliveryDate,
+                    Days = days
+                };
+            }
 
             return null;
         }
@@ -99,17 +113,25 @@ public static class ExpiryDateParser
                 if (monthIndex >= 0)
                 {
                     int month = monthIndex + 1;
-                    try
+
+                    // Find the nearest valid future date for this day/month,
+                    // advancing one year at a time. Handles 29-feb correctly
+                    // by skipping to the next leap year.
+                    for (int yearOffset = 0; yearOffset <= 4; yearOffset++)
                     {
-                        var candidate = new DateTime(DateTime.Today.Year, month, day);
-                        if (candidate < DateTime.Today)
-                            candidate = candidate.AddYears(1);
-                        return candidate;
+                        int year = DateTime.Today.Year + yearOffset;
+                        if (!DateTime.IsLeapYear(year) && month == 2 && day == 29)
+                            continue;
+
+                        if (day > DateTime.DaysInMonth(year, month))
+                            continue;
+
+                        var candidate = new DateTime(year, month, day);
+                        if (candidate >= DateTime.Today)
+                            return candidate;
                     }
-                    catch
-                    {
-                        return null; // invalid day for that month
-                    }
+
+                    return null; // no valid date found within 4 years
                 }
             }
         }
