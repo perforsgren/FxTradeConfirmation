@@ -19,8 +19,9 @@ public partial class RestoreDraftDialog : Window
     public bool WasDismissed { get; private set; } = true;
 
     /// <summary>
-    /// True when the dialog was auto-closed because a clipboard parse cycle
-    /// started. The draft should be discarded (deleted) in this case.
+    /// True when the dialog was auto-closed because the user triggered a new
+    /// clipboard parse cycle. The old draft is discarded in this case, since
+    /// the user has actively chosen to work with a new request instead.
     /// </summary>
     public bool ClosedByParsing { get; private set; }
 
