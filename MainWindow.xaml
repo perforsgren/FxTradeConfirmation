@@ -135,8 +135,11 @@
 
                     <!-- Left-aligned secondary actions -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        
                         <Button Style="{StaticResource ToolbarButton}"
-                        Command="{Binding AddLegCommand}" Margin="0,0,4,0">
+                        Command="{Binding AddLegCommand}" Margin="0,0,4,0"
+                        ToolTipService.InitialShowDelay="200"
+                        ToolTip="Add Leg  (Ctrl+N)">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="M6,0 V12 M0,6 H12"
                               Stroke="{StaticResource PositiveGreenBrush}"
@@ -148,7 +151,9 @@
                         </Button>
 
                         <Button Style="{StaticResource ToolbarDangerButton}"
-                        Command="{Binding ClearAllCommand}" Margin="0,0,4,0">
+                        Command="{Binding ClearAllCommand}" Margin="0,0,4,0"
+                        ToolTipService.InitialShowDelay="200"
+                        ToolTip="Clear All  (Ctrl+W)">
                             <StackPanel Orientation="Horizontal">
                                 <Path Data="M0,0 L10,10 M10,0 L0,10"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -218,7 +223,8 @@
                         </Button>
 
                     </StackPanel>
-                </DockPanel>
+               
+ </DockPanel>
             </Border>
 
             <!-- === MAIN GRID AREA === -->

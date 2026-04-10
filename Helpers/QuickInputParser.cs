@@ -14,7 +14,7 @@ namespace FxTradeConfirmation.Helpers;
 /// <c>eursek 1w,1m b,s c,p</c><br/>
 /// <c>eursek 1m b,s c11,p10.5 n10m,5m</c><br/>
 /// <c>eursek b c11 n5m</c><br/>
-/// <c>eursek 1m s10.30 c11 n5m</c> — spot reference → Hedge=Spot, HedgeRate=10.30
+/// <c>eursek 1m sp10.30 c11 n5m</c> — spot reference → Hedge=Spot, HedgeRate=10.30
 /// </para>
 /// </summary>
 public static class QuickInputParser
@@ -94,8 +94,8 @@ public static class QuickInputParser
                 continue;
             }
 
-            // Spot reference: S10.30 or S10,30 — must be checked BEFORE Buy/Sell
-            // because "S" alone means Sell, but "S" + digits means Spot.
+            // Spot reference: SP10.30 or SP10,30 — must be checked BEFORE Buy/Sell
+            // because "S" alone means Sell, but "SP" + digits means Spot.
             if (RxSpot.IsMatch(token))
             {
                 spotRef = token[2..].Replace(',', '.');
