@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using FxTradeConfirmation.Models;
 using FxTradeConfirmation.Services;
@@ -70,6 +71,21 @@ public partial class OpenRecentDialog : Window
 
         var result = filtered.ToList();
         TradeList.ItemsSource = result;
+
+        if (result.Count > 0)
+        {
+            TradeList.SelectedIndex = 0;
+            TradeList.ScrollIntoView(result[0]);
+
+            // Move keyboard focus to the first ListViewItem so arrow keys work immediately
+            TradeList.Dispatcher.InvokeAsync(() =>
+            {
+                if (TradeList.ItemContainerGenerator.ContainerFromIndex(0) is ListViewItem item)
+                {
+                    item.Focus();
+                }
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
+        }
 
         if (result.Count == 0 && _allEntries.Count > 0)
             ShowStatus("No trades match the current filter.", isError: false);
