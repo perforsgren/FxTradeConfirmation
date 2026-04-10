@@ -18,6 +18,12 @@ public partial class RestoreDraftDialog : Window
     /// </summary>
     public bool WasDismissed { get; private set; } = true;
 
+    /// <summary>
+    /// True when the dialog was auto-closed because a clipboard parse cycle
+    /// started. The draft should be discarded (deleted) in this case.
+    /// </summary>
+    public bool ClosedByParsing { get; private set; }
+
     public RestoreDraftDialog(DraftData draft)
     {
         InitializeComponent();
@@ -29,6 +35,20 @@ public partial class RestoreDraftDialog : Window
             : $"Counterpart  {draft.Counterpart}";
 
         LegSummaries.ItemsSource = BuildSummaries(draft.Legs);
+    }
+
+    /// <summary>
+    /// Closes the dialog as if the user chose Discard, but marks the close
+    /// as triggered by an incoming parse cycle so the caller can distinguish
+    /// the two scenarios.
+    /// Must be called on the UI thread.
+    /// </summary>
+    public void CloseForParsing()
+    {
+        ShouldRestore = false;
+        WasDismissed = false;
+        ClosedByParsing = true;
+        Close();
     }
 
     private static List<LegSummaryRow> BuildSummaries(IReadOnlyList<TradeLeg> legs)

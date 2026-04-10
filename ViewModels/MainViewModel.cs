@@ -45,6 +45,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     private string? _clipboardSnapshot;
 
+    /// <summary>
+    /// Reference to the currently open <see cref="Views.RestoreDraftDialog"/>, or null
+    /// if the dialog is not showing. Used to auto-close and discard the draft when a
+    /// clipboard parse cycle begins while the dialog is still visible.
+    /// Only accessed from the UI thread.
+    /// </summary>
+    private Views.RestoreDraftDialog? _activeRestoreDraftDialog;
+
     public MainViewModel(
         IDatabaseService databaseService,
         IEmailService emailService,
@@ -287,7 +295,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             // Bring MainWindow to front immediately when parsing starts
             await (Application.Current?.Dispatcher
-                .InvokeAsync(() => BringToFrontRequested?.Invoke())
+                .InvokeAsync(() =>
+                {
+                    BringToFrontRequested?.Invoke();
+
+                    // If the RestoreDraftDialog is still open, close it and discard the draft.
+                    if (_activeRestoreDraftDialog is { IsVisible: true } dlg)
+                    {
+                        dlg.CloseForParsing();
+                        _draftService.DeleteDraft();
+                    }
+                })
                 .Task
                 ?? Task.CompletedTask);
 
@@ -1563,7 +1581,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         var dialog = new Views.RestoreDraftDialog(draft) { Owner = Application.Current.MainWindow };
-        dialog.ShowDialog();
+        _activeRestoreDraftDialog = dialog;
+
+        try
+        {
+            dialog.ShowDialog();
+        }
+        finally
+        {
+            _activeRestoreDraftDialog = null;
+        }
+
+        // Dialog was auto-closed by an incoming parse cycle — draft already deleted.
+        if (dialog.ClosedByParsing)
+            return;
 
         // User closed the dialog without choosing — keep the draft intact.
         if (dialog.WasDismissed)
