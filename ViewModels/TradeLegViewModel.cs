@@ -105,6 +105,12 @@ public partial class TradeLegViewModel : ObservableObject
     /// <summary>Last valid parsed hedge rate. Used to revert HedgeRateText on invalid input.</summary>
     private decimal? _lastValidHedgeRate;
 
+    /// <summary>
+    /// Spot reference captured from the most recent parse (e.g. SP10.30).
+    /// Cleared when the user changes currency pair or triggers Clear All.
+    /// </summary>
+    private string _parsedSpotRef = string.Empty;
+
     /// <summary>Last valid parsed option notional. Used to revert NotionalText on invalid input.</summary>
     private decimal? _lastValidNotional;
 
@@ -265,6 +271,7 @@ public partial class TradeLegViewModel : ObservableObject
 
         // ── Value is valid — commit ──────────────────────────────────────────
         _lastValidCurrencyPair = normalized;
+        _parsedSpotRef = string.Empty;  // clear spot ref when currency pair changes
 
         // ── Normal change handling ────────────────────────────────────────────
         if (value.Length >= 6)
@@ -391,9 +398,22 @@ public partial class TradeLegViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasHedge));
         if (value == HedgeType.No)
+        {
             HedgeSettlementDate = null;
+        }
         else
+        {
+            // If the user manually selects Spot or Forward and a parsed spot ref
+            // exists, pre-populate Hedge Rate with it (only when the field is empty).
+            if ((value == HedgeType.Spot || value == HedgeType.Forward)
+                && !string.IsNullOrEmpty(_parsedSpotRef)
+                && string.IsNullOrWhiteSpace(HedgeRateText))
+            {
+                ApplyHedgeRateInput(_parsedSpotRef);
+            }
+
             RecalculateHedgeSettlementDate();
+        }
         _parent.NotifyLegChanged();
     }
 
@@ -1342,14 +1362,12 @@ public partial class TradeLegViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(leg.Expiry))
             ApplyExpiryInput(leg.Expiry);
 
-        // Spot reference → set Hedge Type to Spot, populate Hedge Rate and derive
-        // Hedge Buy/Sell direction from the option's BuySell + CallPut on this leg.
-        // BuySell and CallPut are already set above so UpdateHedgeDirection() is safe.
-        if (!string.IsNullOrWhiteSpace(leg.Spot))
+        // Spot reference — save for later use when the user manually sets Hedge Type
+        // to Spot or Forward. Only stored on the first leg (the parser sets Spot on
+        // all legs but the value is trade-level, not per-leg).
+        if (IsFirstLeg && !string.IsNullOrWhiteSpace(leg.Spot))
         {
-            Hedge = HedgeType.Spot;
-            ApplyHedgeRateInput(leg.Spot);
-            UpdateHedgeDirection();
+            _parsedSpotRef = leg.Spot;
         }
     }
 
