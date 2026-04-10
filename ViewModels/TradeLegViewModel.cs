@@ -1341,6 +1341,16 @@ public partial class TradeLegViewModel : ObservableObject
         // Expiry — try to parse as date first, then fall back to tenor
         if (!string.IsNullOrWhiteSpace(leg.Expiry))
             ApplyExpiryInput(leg.Expiry);
+
+        // Spot reference → set Hedge Type to Spot, populate Hedge Rate and derive
+        // Hedge Buy/Sell direction from the option's BuySell + CallPut on this leg.
+        // BuySell and CallPut are already set above so UpdateHedgeDirection() is safe.
+        if (!string.IsNullOrWhiteSpace(leg.Spot))
+        {
+            Hedge = HedgeType.Spot;
+            ApplyHedgeRateInput(leg.Spot);
+            UpdateHedgeDirection();
+        }
     }
 
     /// <summary>

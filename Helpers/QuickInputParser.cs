@@ -13,7 +13,8 @@ namespace FxTradeConfirmation.Helpers;
 /// <c>eursek 25/4</c> — day/month without year, rolls to next year if past<br/>
 /// <c>eursek 1w,1m b,s c,p</c><br/>
 /// <c>eursek 1m b,s c11,p10.5 n10m,5m</c><br/>
-/// <c>eursek b c11 n5m</c>
+/// <c>eursek b c11 n5m</c><br/>
+/// <c>eursek 1m s10.30 c11 n5m</c> — spot reference → Hedge=Spot, HedgeRate=10.30
 /// </para>
 /// </summary>
 public static class QuickInputParser
@@ -55,6 +56,11 @@ public static class QuickInputParser
         @"^[CP]?\d*(?:[.,]\d+)?D?(?:,[CP]?\d*(?:[.,]\d+)?D?)*$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // Spot reference: SP followed by a numeric value, e.g. SP10.30 or SP10,30
+    private static readonly Regex RxSpot = new(
+        @"^SP\d+(?:[.,]\d+)?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static ParseResult Parse(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -74,6 +80,7 @@ public static class QuickInputParser
         var callPuts = new List<string>();
         var strikes = new List<string>();
         var notionals = new List<long>();
+        string spotRef = string.Empty;
 
         while (idx < tokens.Length)
         {
@@ -84,6 +91,14 @@ public static class QuickInputParser
             {
                 foreach (var part in token.Split(','))
                     expiries.Add(NormalizeExpiry(part.Trim()));
+                continue;
+            }
+
+            // Spot reference: S10.30 or S10,30 — must be checked BEFORE Buy/Sell
+            // because "S" alone means Sell, but "S" + digits means Spot.
+            if (RxSpot.IsMatch(token))
+            {
+                spotRef = token[2..].Replace(',', '.');
                 continue;
             }
 
@@ -101,9 +116,9 @@ public static class QuickInputParser
             // Call/Put + optional strike: c | p | c,p | c11 | p10.5 | c11,p10.5
             if (RxStrikes.IsMatch(token) && HasCallPutPrefix(token))
             {
-                foreach (var part in token.Split(','))
+                foreach (var part in SplitStrikeParts(token))
                 {
-                    ParseStrikePart(part.Trim(), out var callPut, out var strike);
+                    ParseStrikePart(part, out var callPut, out var strike);
                     callPuts.Add(callPut);
                     strikes.Add(strike);
                 }
@@ -150,7 +165,7 @@ public static class QuickInputParser
                 Strike: strikes[i],
                 Notional: notionals[i],
                 Expiry: expiries[i],
-                Spot: string.Empty
+                Spot: i == 0 ? spotRef : string.Empty   // spot only on first leg
             ));
         }
 
@@ -247,6 +262,46 @@ public static class QuickInputParser
     {
         var first = token.Split(',')[0].Trim();
         return first.Length > 0 && char.ToUpperInvariant(first[0]) is 'C' or 'P';
+    }
+
+    /// <summary>
+    /// Splits a strike token on commas, but treats a comma as a decimal separator
+    /// (not a leg separator) when the part after the comma does NOT start with C or P.
+    /// <para>
+    /// <c>"c11,p10.5"</c> → <c>["c11", "p10.5"]</c> (two legs)<br/>
+    /// <c>"P10,50"</c>    → <c>["P10.50"]</c>        (one leg, decimal comma)<br/>
+    /// <c>"c11,50"</c>    → <c>["c11.50"]</c>        (one leg, decimal comma)
+    /// </para>
+    /// </summary>
+    private static List<string> SplitStrikeParts(string token)
+    {
+        var rawParts = token.Split(',');
+        var result = new List<string>();
+
+        int i = 0;
+        while (i < rawParts.Length)
+        {
+            var current = rawParts[i].Trim();
+
+            // Peek at the next part: if it exists and does NOT start with C/P,
+            // the comma was a decimal separator → merge with current part.
+            if (i + 1 < rawParts.Length)
+            {
+                var next = rawParts[i + 1].Trim();
+                if (next.Length > 0 && char.ToUpperInvariant(next[0]) is not ('C' or 'P'))
+                {
+                    // Merge: replace the comma with a dot for decimal
+                    result.Add(current + "." + next);
+                    i += 2;
+                    continue;
+                }
+            }
+
+            result.Add(current);
+            i++;
+        }
+
+        return result;
     }
 
     private static void ParseStrikePart(string part, out string callPut, out string strike)
