@@ -31,6 +31,7 @@
         <KeyBinding Key="B" Modifiers="Ctrl" Command="{Binding SendAllToBloombergCommand}"/>
         <KeyBinding Key="W" Modifiers="Ctrl" Command="{Binding ClearAllCommand}"/>
         <KeyBinding Key="Q" Modifiers="Ctrl" Command="{Binding ToggleQuickInputCommand}"/>
+        <KeyBinding Key="U" Modifiers="Ctrl" Command="{Binding CopyUbsStringCommand}"/>
     </Window.InputBindings>
 
     <Window.Resources>

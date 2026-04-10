@@ -1140,6 +1140,129 @@ public partial class MainViewModel : ObservableObject, IDisposable
         StatusMessage = $"✓ Quick input — {result.Legs.Count} leg(s) populated";
     }
 
+    // --- UBS Option Pricer Quick Input ---
+
+    /// <summary>
+    /// Builds a UBS Option Pricer quick-input string from the current UI state
+    /// and copies it to the clipboard. Hidden feature — accessed via Ctrl+U.
+    /// </summary>
+    [RelayCommand]
+    private void CopyUbsString()
+    {
+        if (Legs.Count == 0)
+        {
+            StatusMessage = "⚠ No legs to export.";
+            return;
+        }
+
+        try
+        {
+            var ubsString = BuildUbsString();
+
+            if (string.IsNullOrWhiteSpace(ubsString))
+            {
+                StatusMessage = "⚠ Not enough data to build UBS string.";
+                return;
+            }
+
+            Clipboard.SetText(ubsString);
+            StatusMessage = $"✓ UBS string copied: {ubsString}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"⚠ UBS copy failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Builds the UBS Option Pricer quick-input string.
+    /// Format: PAIR expiry callput strike notional[, expiry callput strike notional]... [spotRate]
+    ///
+    /// Notional scaling rules:
+    /// - 1–2 legs: if max notional exceeds 10,000,000, scale so the largest leg
+    ///   maps to exactly 10,000,000 (all others scaled proportionally).
+    /// - 3+ legs: if max notional exceeds 50,000,000, divide all notionals by 10.
+    ///
+    /// Separator rules:
+    /// - If exactly 2 legs where one is Buy and the other Sell → use " vs " (spread)
+    /// - Otherwise all legs are joined with ", " (all default to buy in UBS)
+    ///
+    /// Spot is appended only when Hedge Type ≠ No and HedgeRate is populated (from leg 1).
+    /// </summary>
+    private string BuildUbsString()
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+
+        // Currency pair comes from leg 1
+        var pair = Legs[0].CurrencyPair;
+        if (string.IsNullOrWhiteSpace(pair)) return string.Empty;
+
+        var maxNotional = Legs
+            .Where(l => l.Notional.HasValue)
+            .Select(l => Math.Abs(l.Notional!.Value))
+            .DefaultIfEmpty(0m)
+            .Max();
+
+        // Notional scaling:
+        // 1–2 legs: proportional scale so the largest leg becomes 10,000,000
+        // 3+ legs:  fixed factor of 10 when max exceeds 50,000,000
+        decimal scaleFactor;
+        if (Legs.Count <= 2)
+            scaleFactor = maxNotional > 10_000_000m ? maxNotional / 10_000_000m : 1m;
+        else
+            scaleFactor = maxNotional > 50_000_000m ? 10m : 1m;
+
+        // Build each leg fragment: "expiry callput strike notional"
+        var legParts = new List<string>();
+        foreach (var leg in Legs)
+        {
+            var parts = new List<string>();
+
+            // Expiry: dd-MMM-yyyy (e.g. "21-Apr-2026")
+            if (leg.ExpiryDate.HasValue)
+                parts.Add(leg.ExpiryDate.Value.ToString("dd-MMM-yyyy", inv));
+
+            // Call/Put
+            parts.Add(leg.CallPut.ToString().ToLowerInvariant());
+
+            // Strike — max 4 decimal places, trailing zeros stripped
+            if (leg.Strike.HasValue)
+                parts.Add(leg.Strike.Value.ToString("F4", inv).TrimEnd('0').TrimEnd('.'));
+
+            // Notional — plain integer, scaled according to the rule above
+            if (leg.Notional.HasValue)
+            {
+                var scaled = Math.Round(Math.Abs(leg.Notional.Value) / scaleFactor, 0);
+                parts.Add(((long)scaled).ToString(inv));
+            }
+
+            if (parts.Count == 0) continue;
+            legParts.Add(string.Join(" ", parts));
+        }
+
+        if (legParts.Count == 0) return string.Empty;
+
+        // Determine separator: "vs" for a 2-leg spread (buy+sell), otherwise ","
+        string separator = Legs.Count == 2 && Legs[0].BuySell != Legs[1].BuySell
+            ? " vs "
+            : ", ";
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append(pair);
+        sb.Append(' ');
+        sb.Append(string.Join(separator, legParts));
+
+        // Spot — only when leg 1 has a hedge and a hedge rate
+        var leg1 = Legs[0];
+        if (leg1.Hedge != HedgeType.No && leg1.HedgeRate.HasValue)
+        {
+            sb.Append(" spot");
+            sb.Append(leg1.HedgeRate.Value.ToString("F5", inv).TrimEnd('0').TrimEnd('.'));
+        }
+
+        return sb.ToString();
+    }
+
     // --- Internal ---
 
     private void AddLegInternal()
