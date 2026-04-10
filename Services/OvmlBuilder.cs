@@ -169,22 +169,24 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
         Snapshot(p1);
 
         if (!NeedsSecondPass(p1))
-            return Finish(p1);
+            return Finish(p1, spotFromParsing: true);
 
         ct.ThrowIfCancellationRequested();
 
         // ── Pass 2 ───────────────────────────────────────────────────────────
-        var extSpot = TryExtractSpotFromText(input)
-           ?? await TryFetchSpotAsync(Safe(p1.Pair), ct);
+        var extSpot = TryExtractSpotFromText(input);
+        bool spotFromText = extSpot.HasValue;
+        extSpot ??= await TryFetchSpotAsync(Safe(p1.Pair), ct);
+
         var modified = input;
         if (extSpot.HasValue)
             modified += " sp ref " + extSpot.Value.ToString(CultureInfo.InvariantCulture);
 
         var raw2 = await CallApiAsync(modified, systemPrompt, ct);
-        if (LastWasCanceled) return Finish(p1); // return pass-1 result on cancel
+        if (LastWasCanceled) return Finish(p1, spotFromParsing: true); // return pass-1 result on cancel
 
         var p2 = TryParseJson(raw2);
-        if (p2 is null) { LastPassesUsed = 2; return Finish(p1); }
+        if (p2 is null) { LastPassesUsed = 2; return Finish(p1, spotFromParsing: true); }
 
         NormalizePair(p2);
         RollExpiryIfPast(p2);
@@ -194,7 +196,7 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
         LastPassesUsed = 2;
         Snapshot(p2);
 
-        return Finish(p2);
+        return Finish(p2, spotFromParsing: spotFromText);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -225,10 +227,10 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
         }
     }
 
-    private ParseResult Finish(ParsedOutput po)
+    private ParseResult Finish(ParsedOutput po, bool spotFromParsing = true)
     {
         var ovml = ToOvml(po);
-        var legs = BuildLegs(po);
+        var legs = BuildLegs(po, spotFromParsing);
         return new ParseResult(ovml, legs);
     }
 
@@ -366,7 +368,7 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
         return string.Join(" ", parts);
     }
 
-    private static List<OvmlLeg> BuildLegs(ParsedOutput po)
+    private static List<OvmlLeg> BuildLegs(ParsedOutput po, bool spotFromParsing = true)
     {
         if (po?.Legs is null) return [];
 
@@ -388,7 +390,8 @@ public sealed class OvmlBuilder : IOvmlParser, IDisposable
                     Strike: NormalizeStrike(Safe(l?.Strike)),
                     Notional: ParseNotional(Safe(l?.Notional)),
                     Expiry: expiry,
-                    Spot: spot);
+                    Spot: spot,
+                    SpotFromParsing: spotFromParsing && !string.IsNullOrEmpty(spot));
             })
             .ToList();
     }

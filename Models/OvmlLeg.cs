@@ -12,5 +12,11 @@ public sealed record OvmlLeg(
     long Notional,
     string Expiry,
     string Spot,
-    string SenderName = ""
+    string SenderName = "",
+    /// <summary>
+    /// True when the spot reference was extracted directly from the clipboard/input text.
+    /// False when the spot was fetched from Bloomberg. Only a parsed spot should
+    /// auto-populate Hedge Rate when the user selects a Hedge Type.
+    /// </summary>
+    bool SpotFromParsing = false
 );

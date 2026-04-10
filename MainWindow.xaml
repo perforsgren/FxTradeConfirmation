@@ -135,7 +135,7 @@
 
                     <!-- Left-aligned secondary actions -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        
+
                         <Button Style="{StaticResource ToolbarButton}"
                         Command="{Binding AddLegCommand}" Margin="0,0,4,0"
                         ToolTipService.InitialShowDelay="200"
@@ -219,12 +219,9 @@
                                               Command="{Binding ToggleQuickInputCommand}"/>
                                 </ContextMenu>
                             </Button.ContextMenu>
-
                         </Button>
-
                     </StackPanel>
-               
- </DockPanel>
+                 </DockPanel>
             </Border>
 
             <!-- === MAIN GRID AREA === -->

@@ -1363,9 +1363,9 @@ public partial class TradeLegViewModel : ObservableObject
             ApplyExpiryInput(leg.Expiry);
 
         // Spot reference — save for later use when the user manually sets Hedge Type
-        // to Spot or Forward. Only stored on the first leg (the parser sets Spot on
-        // all legs but the value is trade-level, not per-leg).
-        if (IsFirstLeg && !string.IsNullOrWhiteSpace(leg.Spot))
+        // to Spot or Forward. Only stored when the spot was extracted directly from
+        // the clipboard/input text (not fetched via Bloomberg).
+        if (IsFirstLeg && !string.IsNullOrWhiteSpace(leg.Spot) && leg.SpotFromParsing)
         {
             _parsedSpotRef = leg.Spot;
         }

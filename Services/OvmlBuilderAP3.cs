@@ -232,7 +232,8 @@ public sealed class OvmlBuilderAP3 : IOvmlParser
                 : rawStrike;
             var notional = string.IsNullOrEmpty(m.Groups[4].Value) ? 0L : ConvertNotional(m.Groups[4].Value);
 
-            list.Add(new OvmlLeg(pair, buySell, putCall, strike, notional, expiry, spot));
+            list.Add(new OvmlLeg(pair, buySell, putCall, strike, notional, expiry, spot,
+                SpotFromParsing: !string.IsNullOrEmpty(spot)));
         }
 
         return list;

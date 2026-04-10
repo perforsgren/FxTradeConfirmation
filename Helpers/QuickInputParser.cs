@@ -158,6 +158,7 @@ public static class QuickInputParser
         var legs = new List<OvmlLeg>();
         for (int i = 0; i < legCount; i++)
         {
+            var legSpot = i == 0 ? spotRef : string.Empty;
             legs.Add(new OvmlLeg(
                 Pair: pair,
                 BuySell: buySells[i],
@@ -165,7 +166,8 @@ public static class QuickInputParser
                 Strike: strikes[i],
                 Notional: notionals[i],
                 Expiry: expiries[i],
-                Spot: i == 0 ? spotRef : string.Empty   // spot only on first leg
+                Spot: legSpot,
+                SpotFromParsing: !string.IsNullOrEmpty(legSpot)
             ));
         }
 
