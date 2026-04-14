@@ -352,6 +352,27 @@ public class DateConvention
         return current;
     }
 
+    /// <summary>
+    /// Steps backward N non-weekend days from <paramref name="startDate"/>.
+    /// Unlike <see cref="moveBusinessDays"/>, this method does NOT skip CCY or
+    /// US holidays — expiry dates may fall on public holidays (only 01-Jan is
+    /// excluded, handled separately in <see cref="getBackwardDate"/>).
+    /// </summary>
+    private static DateTime stepBackNonWeekendDays(DateTime startDate, int days)
+    {
+        int remaining = days;
+        DateTime current = startDate;
+
+        while (remaining > 0)
+        {
+            current = current.AddDays(-1);
+            if (current.DayOfWeek != DayOfWeek.Saturday && current.DayOfWeek != DayOfWeek.Sunday)
+                remaining--;
+        }
+
+        return current;
+    }
+
     //get delivery date if we add months
     // Bug #5 fix: after holiday-rolling in the EOM branch, verify the date hasn't
     // crossed into the next month. If it has, roll backward instead (Modified Following).
@@ -552,25 +573,15 @@ public class DateConvention
     // Move Backwards function (from Delivery to Expiry date)
     private DateTime getBackwardDate(DateTime deliveryDate, int tAdd)
     {
-        DateTime output;
-        output = deliveryDate;
+        // Step back tAdd non-weekend days from delivery — holidays are allowed on expiry.
+        DateTime output = stepBackNonWeekendDays(deliveryDate, tAdd);
 
-        output = moveBusinessDays(deliveryDate, -tAdd);
-
-        if (output.DayOfWeek == DayOfWeek.Saturday)
-        {
+        // 01-Jan is the only date that cannot be an expiry — roll back one calendar day.
+        if (isFirstOfJan(output))
             output = output.AddDays(-1);
-        }
-        else if (output.DayOfWeek == DayOfWeek.Sunday)
-        {
-            output = output.AddDays(-2);
-        }
 
-        if (isFirstOfJan(output) == true)
-        {
-            output = output.AddDays(-1);
-        }
-
+        // Ensure the delivery date still has at least one valid settlement day
+        // (non-weekend, non-CCY-non-US-holiday) between expiry and delivery.
         bool businessDayFound = false;
         int roll = 0;
         do
@@ -583,26 +594,24 @@ public class DateConvention
             for (int i = 1; i < timespan; i++)
             {
                 DateTime dayToCheck = output.AddDays(i);
-                if (dayToCheck.DayOfWeek != DayOfWeek.Sunday && dayToCheck.DayOfWeek != DayOfWeek.Saturday && isCCYHoliday_notUS(dayToCheck) == false)
+                if (dayToCheck.DayOfWeek != DayOfWeek.Sunday
+                    && dayToCheck.DayOfWeek != DayOfWeek.Saturday
+                    && !isCCYHoliday_notUS(dayToCheck))
                 {
                     businessDayFound = true;
                 }
             }
-            if (businessDayFound == false)
-            {
-                output = moveBusinessDays(output, -1);
 
-                if (output.DayOfWeek == DayOfWeek.Saturday)
-                {
+            if (!businessDayFound)
+            {
+                // Still no valid settlement gap — step back one more non-weekend day.
+                output = stepBackNonWeekendDays(output, 1);
+
+                if (isFirstOfJan(output))
                     output = output.AddDays(-1);
-                }
-                else if (output.DayOfWeek == DayOfWeek.Sunday)
-                {
-                    output = output.AddDays(-2);
-                }
             }
 
-        } while (businessDayFound == false);
+        } while (!businessDayFound);
 
         return output;
     }
